@@ -158,7 +158,7 @@ try
     FACE_LOOP(outDataWest  ,   u*2-1 ,    -1   , v*2-1);
     FACE_LOOP(outDataLon0  ,     1   ,   u*2-1 , v*2-1);
     FACE_LOOP(outDataEast  , -(u*2-1),     1   , v*2-1);
-    FACE_LOOP(outDataLon180,    -1   ,   u*2-1 , v*2-1);
+    FACE_LOOP(outDataLon180,    -1   , -(u*2-1), v*2-1);
 
     const QString faceTypes[]={"3-west", "0-lon0", "2-east", "1-lon180", "5-north","4-south"};
     unsigned faceN=0;

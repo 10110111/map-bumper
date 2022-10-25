@@ -1,8 +1,10 @@
 #include <cmath>
+#include <random>
 #include <iostream>
 #include <algorithm>
 
 #include <QImage>
+#include <QVector2D>
 
 template<typename T>
 double fetch(T const* data, const ssize_t width, const ssize_t height, const size_t rowStride,
@@ -57,15 +59,16 @@ double sample(T const* data, const size_t width, const size_t height, const size
 int main(int argc, char** argv)
 try
 {
-    if(argc != 4)
+    if(argc != 4 && argc != 5)
     {
-        std::cerr << "Usage: " << argv[0] << " inputFile outputFile cubeMapSideInPixels\n";
+        std::cerr << "Usage: " << argv[0] << " inputFile outputFile cubeMapSideInPixels [supersamplingLevel]\n";
         return 1;
     }
 
     const char*const inFileName  = argv[1];
     const char*const outFileName = argv[2];
     const auto cubeMapSide = std::stoul(argv[3]);
+    const unsigned numSamples = argc==4 ? 1 : std::stoul(argv[4]);
 
     QImage in(inFileName);
     if(in.isNull())
@@ -86,23 +89,44 @@ try
     }
     const auto rowStride = strideInBytes / sizeof data[0];
 
-    std::vector<double> outData(cubeMapSide*cubeMapSide);
-    for(size_t i = 0; i < cubeMapSide; ++i)
+    std::vector<QVector2D> samples(numSamples);
+    if(numSamples<=1)
+        samples = {QVector2D(0,0)};
+    else
     {
-        const auto u = (0.5+i)/cubeMapSide;
-        for(size_t j = 0; j < cubeMapSide; ++j)
+        std::mt19937 mt(std::random_device{}());
+        std::uniform_real_distribution<double> dist(-0.5,0.5);
+        static const auto rng=[&](){return dist(mt);};
+
+        for(auto& sample : samples)
+            sample = QVector2D(rng(), rng());
+    }
+
+    std::vector<double> outData(cubeMapSide*cubeMapSide);
+    for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
+    {
+        for(size_t i = 0; i < cubeMapSide; ++i)
         {
-            const auto v = (0.5+(cubeMapSide-1-j))/cubeMapSide;
+            const auto u = (0.5 + i + samples[sampleN].x())/cubeMapSide;
+            for(size_t j = 0; j < cubeMapSide; ++j)
+            {
+                const auto v = (0.5+(cubeMapSide - 1 - (j + samples[sampleN].y())))/cubeMapSide;
+                const auto posInData = i + j*cubeMapSide;
+                const auto x = u*2-1;
+                const auto y = v*2-1;
+                const auto z = 1;
 
-            const auto x = u*2-1;
-            const auto y = v*2-1;
-            const auto z = 1;
+                const auto longitude = atan2(y,x);
+                const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
 
-            const auto longitude = atan2(y,x);
-            const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
-
-            outData[i + j*cubeMapSide] = sample(data, width, height, rowStride, longitude, latitude);
+                outData[posInData] += sample(data, width, height, rowStride, longitude, latitude);
+            }
         }
+    }
+    if(numSamples > 1)
+    {
+        for(auto& v : outData)
+            v *= 1./numSamples;
     }
 
     using OutType = uchar;

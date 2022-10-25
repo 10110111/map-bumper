@@ -153,12 +153,16 @@ try
     }                                                                           \
     do{}while(false)
 
-    FACE_LOOP(outDataNorth, u*2-1, v*2-1, 1);
-    FACE_LOOP(outDataSouth, u*2-1, -(v*2-1), -1);
+    FACE_LOOP(outDataNorth ,   u*2-1 ,   v*2-1 ,   1);
+    FACE_LOOP(outDataSouth ,   u*2-1 , -(v*2-1),  -1);
+    FACE_LOOP(outDataWest  ,   u*2-1 ,    -1   , v*2-1);
+    FACE_LOOP(outDataLon0  ,     1   ,   u*2-1 , v*2-1);
+    FACE_LOOP(outDataEast  , -(u*2-1),     1   , v*2-1);
+    FACE_LOOP(outDataLon180,    -1   ,   u*2-1 , v*2-1);
 
-    const QString faceTypes[]={"north","south"};
+    const QString faceTypes[]={"west", "lon0", "east", "lon180", "north","south"};
     unsigned faceN=0;
-    for(const auto& outData : {outDataNorth, outDataSouth})
+    for(const auto& outData : {outDataWest, outDataLon0, outDataEast, outDataLon180, outDataNorth, outDataSouth})
     {
         using OutType = uchar;
         std::vector<OutType> outBits;

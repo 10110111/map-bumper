@@ -7,13 +7,14 @@
 #include <QVector2D>
 
 template<typename T>
-double fetch(T const* data, const ssize_t width, const ssize_t height, const size_t rowStride,
-             const ssize_t requestedX, const ssize_t requestedY)
+double fetch(T const* data, const ssize_t width, const ssize_t height,
+             const size_t rowStride, const size_t bytesPerPixel,
+             const size_t subpixelIndex, const ssize_t requestedX, const ssize_t requestedY)
 {
     const auto x = (requestedX+width) % width;
     const auto y = std::clamp(requestedY, 0, height-1);
 
-    const auto rawValue = data[x + y*rowStride];
+    const auto rawValue = data[x*bytesPerPixel + subpixelIndex + y*rowStride];
 
     if(std::is_integral_v<T> && std::is_unsigned_v<T>)
         return static_cast<double>(rawValue) / std::numeric_limits<T>::max();
@@ -24,8 +25,9 @@ double fetch(T const* data, const ssize_t width, const ssize_t height, const siz
 }
 
 template<typename T>
-double sample(T const* data, const size_t width, const size_t height, const size_t rowStride,
-              const double longitude, const double latitude)
+double sample(T const* data, const size_t width, const size_t height,
+              const size_t rowStride, const size_t bytesPerPixel,
+              const size_t subpixelIndex, const double longitude, const double latitude)
 {
     assert(-M_PI <= longitude && longitude <= M_PI);
     assert(-M_PI/2 <= latitude && latitude <= M_PI);
@@ -42,10 +44,10 @@ double sample(T const* data, const size_t width, const size_t height, const size
     const auto y = (latitude - firstLat) / deltaLat;
     const auto floorY = std::floor(y);
 
-    const auto pTopLeft     = fetch(data, width, height, rowStride, floorX  , floorY);
-    const auto pTopRight    = fetch(data, width, height, rowStride, floorX+1, floorY);
-    const auto pBottomLeft  = fetch(data, width, height, rowStride, floorX  , floorY+1);
-    const auto pBottomRight = fetch(data, width, height, rowStride, floorX+1, floorY+1);
+    const auto pTopLeft     = fetch(data, width, height, rowStride, bytesPerPixel, subpixelIndex, floorX  , floorY);
+    const auto pTopRight    = fetch(data, width, height, rowStride, bytesPerPixel, subpixelIndex, floorX+1, floorY);
+    const auto pBottomLeft  = fetch(data, width, height, rowStride, bytesPerPixel, subpixelIndex, floorX  , floorY+1);
+    const auto pBottomRight = fetch(data, width, height, rowStride, bytesPerPixel, subpixelIndex, floorX+1, floorY+1);
 
     const auto fracX = x - floorX;
     const auto fracY = y - floorY;
@@ -82,7 +84,7 @@ try
         std::cerr << "Failed to open input file\n";
         return 1;
     }
-    in = in.convertToFormat(QImage::Format_Grayscale8);
+    in = in.convertToFormat(in.isGrayscale() ? QImage::Format_Grayscale8 : in.hasAlphaChannel() ? QImage::Format_ARGB32 : QImage::Format_RGB32);
 
     const auto data = in.bits();
     const auto width  = in.width();
@@ -93,6 +95,13 @@ try
         std::cerr << "Row stride of " << strideInBytes << " bytes is not a multiple of a pixel, this is not supported\n";
         return 1;
     }
+    const auto bitDepth = in.depth();
+    if(bitDepth % 8)
+    {
+        std::cerr << bitDepth << " bit per pixel is not a multiple of octet, this is not supported\n";
+        return 1;
+    }
+    const auto bytesPerPixel = bitDepth / 8;
     const auto rowStride = strideInBytes / sizeof data[0];
 
     std::vector<QVector2D> samples(numSamples);
@@ -108,7 +117,7 @@ try
             sample = QVector2D(rng(), rng());
     }
 
-    std::vector<double> outDataNorth(cubeMapSide*cubeMapSide);
+    std::vector<double> outDataNorth(cubeMapSide*cubeMapSide*bytesPerPixel);
     for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
     {
         for(size_t i = 0; i < cubeMapSide; ++i)
@@ -117,7 +126,7 @@ try
             for(size_t j = 0; j < cubeMapSide; ++j)
             {
                 const auto v = (0.5+(cubeMapSide - 1 - (j + samples[sampleN].y())))/cubeMapSide;
-                const auto posInData = i + j*cubeMapSide;
+                const auto pixelPosInData = (i + j*cubeMapSide)*bytesPerPixel;
                 const auto x = u*2-1;
                 const auto y = v*2-1;
                 const auto z = 1;
@@ -125,7 +134,11 @@ try
                 const auto longitude = atan2(y,x);
                 const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
 
-                outDataNorth[posInData] += sample(data, width, height, rowStride, longitude, latitude);
+                for(int subpixelN = 0; subpixelN < bytesPerPixel; ++subpixelN)
+                {
+                    outDataNorth[pixelPosInData + subpixelN] += sample(data, width, height, rowStride, bytesPerPixel,
+                                                                       subpixelN, longitude, latitude);
+                }
             }
         }
     }
@@ -135,7 +148,7 @@ try
             v *= 1./numSamples;
     }
 
-    std::vector<double> outDataSouth(cubeMapSide*cubeMapSide);
+    std::vector<double> outDataSouth(cubeMapSide*cubeMapSide*bytesPerPixel);
     for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
     {
         for(size_t i = 0; i < cubeMapSide; ++i)
@@ -144,7 +157,7 @@ try
             for(size_t j = 0; j < cubeMapSide; ++j)
             {
                 const auto v = (0.5+(cubeMapSide - 1 - (j + samples[sampleN].y())))/cubeMapSide;
-                const auto posInData = i + j*cubeMapSide;
+                const auto pixelPosInData = (i + j*cubeMapSide)*bytesPerPixel;
                 const auto x =   u*2-1;
                 const auto y = -(v*2-1);
                 const auto z = -1;
@@ -152,7 +165,11 @@ try
                 const auto longitude = atan2(y,x);
                 const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
 
-                outDataSouth[posInData] += sample(data, width, height, rowStride, longitude, latitude);
+                for(int subpixelN = 0; subpixelN < bytesPerPixel; ++subpixelN)
+                {
+                    outDataSouth[pixelPosInData + subpixelN] += sample(data, width, height, rowStride, bytesPerPixel,
+                                                                       subpixelN, longitude, latitude);
+                }
             }
         }
     }
@@ -169,9 +186,17 @@ try
         using OutType = uchar;
         std::vector<OutType> outBits;
         outBits.reserve(outData.size());
-        for(auto v : outData)
-            outBits.push_back(v*std::numeric_limits<OutType>::max());
-        QImage out(outBits.data(), cubeMapSide, cubeMapSide, cubeMapSide, QImage::Format_Grayscale8);
+        if(std::is_integral_v<OutType>)
+        {
+            for(auto v : outData)
+                outBits.push_back(std::clamp(v,0.,1.)*std::numeric_limits<OutType>::max());
+        }
+        else
+        {
+            for(auto v : outData)
+                outBits.push_back(v*std::numeric_limits<OutType>::max());
+        }
+        const QImage out(outBits.data(), cubeMapSide, cubeMapSide, cubeMapSide*bytesPerPixel, in.format());
         const auto fileName = outFileNamePattern.arg(faceTypes[faceN]);
         if(!out.save(fileName))
         {

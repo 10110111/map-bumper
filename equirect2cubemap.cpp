@@ -61,12 +61,18 @@ try
 {
     if(argc != 4 && argc != 5)
     {
-        std::cerr << "Usage: " << argv[0] << " inputFile outputFile cubeMapSideInPixels [supersamplingLevel]\n";
+        std::cerr << "Usage: " << argv[0] << " inputFile outputFilePattern cubeMapSideInPixels [supersamplingLevel]\n";
         return 1;
     }
 
     const char*const inFileName  = argv[1];
-    const char*const outFileName = argv[2];
+    const auto outFileNamePattern = QString(argv[2]);
+    if(!outFileNamePattern.contains("%1"))
+    {
+        std::cerr << "File name pattern must contain a %1 placeholder that will be replaced with face name when saving the faces\n";
+        return 1;
+    }
+
     const auto cubeMapSide = std::stoul(argv[3]);
     const unsigned numSamples = argc==4 ? 1 : std::stoul(argv[4]);
 
@@ -102,7 +108,7 @@ try
             sample = QVector2D(rng(), rng());
     }
 
-    std::vector<double> outData(cubeMapSide*cubeMapSide);
+    std::vector<double> outDataNorth(cubeMapSide*cubeMapSide);
     for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
     {
         for(size_t i = 0; i < cubeMapSide; ++i)
@@ -119,26 +125,60 @@ try
                 const auto longitude = atan2(y,x);
                 const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
 
-                outData[posInData] += sample(data, width, height, rowStride, longitude, latitude);
+                outDataNorth[posInData] += sample(data, width, height, rowStride, longitude, latitude);
             }
         }
     }
     if(numSamples > 1)
     {
-        for(auto& v : outData)
+        for(auto& v : outDataNorth)
             v *= 1./numSamples;
     }
 
-    using OutType = uchar;
-    std::vector<OutType> outBits;
-    outBits.reserve(outData.size());
-    for(auto v : outData)
-        outBits.push_back(v*std::numeric_limits<OutType>::max());
-    QImage out(outBits.data(), cubeMapSide, cubeMapSide, cubeMapSide, QImage::Format_Grayscale8);
-    if(!out.save(outFileName))
+    std::vector<double> outDataSouth(cubeMapSide*cubeMapSide);
+    for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
     {
-        std::cerr << "Failed to save output file\n";
-        return 1;
+        for(size_t i = 0; i < cubeMapSide; ++i)
+        {
+            const auto u = (0.5 + i + samples[sampleN].x())/cubeMapSide;
+            for(size_t j = 0; j < cubeMapSide; ++j)
+            {
+                const auto v = (0.5+(cubeMapSide - 1 - (j + samples[sampleN].y())))/cubeMapSide;
+                const auto posInData = i + j*cubeMapSide;
+                const auto x =   u*2-1;
+                const auto y = -(v*2-1);
+                const auto z = -1;
+
+                const auto longitude = atan2(y,x);
+                const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
+
+                outDataSouth[posInData] += sample(data, width, height, rowStride, longitude, latitude);
+            }
+        }
+    }
+    if(numSamples > 1)
+    {
+        for(auto& v : outDataSouth)
+            v *= 1./numSamples;
+    }
+
+    const QString faceTypes[]={"north","south"};
+    unsigned faceN=0;
+    for(const auto& outData : {outDataNorth, outDataSouth})
+    {
+        using OutType = uchar;
+        std::vector<OutType> outBits;
+        outBits.reserve(outData.size());
+        for(auto v : outData)
+            outBits.push_back(v*std::numeric_limits<OutType>::max());
+        QImage out(outBits.data(), cubeMapSide, cubeMapSide, cubeMapSide, QImage::Format_Grayscale8);
+        const auto fileName = outFileNamePattern.arg(faceTypes[faceN]);
+        if(!out.save(fileName))
+        {
+            std::cerr << "Failed to save output file " << fileName.toStdString() << "\n";
+            return 1;
+        }
+        ++faceN;
     }
 }
 catch(std::exception const& ex)

@@ -117,67 +117,44 @@ try
             sample = QVector2D(rng(), rng());
     }
 
-    std::vector<double> outDataNorth(cubeMapSide*cubeMapSide*bytesPerPixel);
-    for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
-    {
-        for(size_t i = 0; i < cubeMapSide; ++i)
-        {
-            const auto u = (0.5 + i + samples[sampleN].x())/cubeMapSide;
-            for(size_t j = 0; j < cubeMapSide; ++j)
-            {
-                const auto v = (0.5+(cubeMapSide - 1 - (j + samples[sampleN].y())))/cubeMapSide;
-                const auto pixelPosInData = (i + j*cubeMapSide)*bytesPerPixel;
-                const auto x = u*2-1;
-                const auto y = v*2-1;
-                const auto z = 1;
+#define FACE_LOOP(DATA_NAME, X_EXPR, Y_EXPR, Z_EXPR)                            \
+    std::vector<double> DATA_NAME(cubeMapSide*cubeMapSide*bytesPerPixel);       \
+    for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)                  \
+    {                                                                           \
+        for(size_t i = 0; i < cubeMapSide; ++i)                                 \
+        {                                                                       \
+            const auto I = i + samples[sampleN].x();                            \
+            const auto u = (0.5 + I) / cubeMapSide;                             \
+            for(size_t j = 0; j < cubeMapSide; ++j)                             \
+            {                                                                   \
+                const auto J = j + samples[sampleN].y();                        \
+                const auto v = (0.5+(cubeMapSide - 1 - J)) / cubeMapSide;       \
+                const auto pixelPosInData = (i + j*cubeMapSide)*bytesPerPixel;  \
+                const auto x = X_EXPR;                                          \
+                const auto y = Y_EXPR;                                          \
+                const auto z = Z_EXPR;                                          \
+                                                                                \
+                const auto longitude = atan2(y,x);                              \
+                const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));    \
+                                                                                \
+                for(int subpixelN = 0; subpixelN < bytesPerPixel; ++subpixelN)  \
+                {                                                               \
+                    DATA_NAME[pixelPosInData + subpixelN] +=                    \
+                        sample(data, width, height, rowStride, bytesPerPixel,   \
+                               subpixelN, longitude, latitude);                 \
+                }                                                               \
+            }                                                                   \
+        }                                                                       \
+    }                                                                           \
+    if(numSamples > 1)                                                          \
+    {                                                                           \
+        for(auto& v : DATA_NAME)                                                \
+            v *= 1./numSamples;                                                 \
+    }                                                                           \
+    do{}while(false)
 
-                const auto longitude = atan2(y,x);
-                const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
-
-                for(int subpixelN = 0; subpixelN < bytesPerPixel; ++subpixelN)
-                {
-                    outDataNorth[pixelPosInData + subpixelN] += sample(data, width, height, rowStride, bytesPerPixel,
-                                                                       subpixelN, longitude, latitude);
-                }
-            }
-        }
-    }
-    if(numSamples > 1)
-    {
-        for(auto& v : outDataNorth)
-            v *= 1./numSamples;
-    }
-
-    std::vector<double> outDataSouth(cubeMapSide*cubeMapSide*bytesPerPixel);
-    for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
-    {
-        for(size_t i = 0; i < cubeMapSide; ++i)
-        {
-            const auto u = (0.5 + i + samples[sampleN].x())/cubeMapSide;
-            for(size_t j = 0; j < cubeMapSide; ++j)
-            {
-                const auto v = (0.5+(cubeMapSide - 1 - (j + samples[sampleN].y())))/cubeMapSide;
-                const auto pixelPosInData = (i + j*cubeMapSide)*bytesPerPixel;
-                const auto x =   u*2-1;
-                const auto y = -(v*2-1);
-                const auto z = -1;
-
-                const auto longitude = atan2(y,x);
-                const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));
-
-                for(int subpixelN = 0; subpixelN < bytesPerPixel; ++subpixelN)
-                {
-                    outDataSouth[pixelPosInData + subpixelN] += sample(data, width, height, rowStride, bytesPerPixel,
-                                                                       subpixelN, longitude, latitude);
-                }
-            }
-        }
-    }
-    if(numSamples > 1)
-    {
-        for(auto& v : outDataSouth)
-            v *= 1./numSamples;
-    }
+    FACE_LOOP(outDataNorth, u*2-1, v*2-1, 1);
+    FACE_LOOP(outDataSouth, u*2-1, -(v*2-1), -1);
 
     const QString faceTypes[]={"north","south"};
     unsigned faceN=0;

@@ -1,11 +1,11 @@
 #include <cmath>
+#include <random>
 #include <iostream>
 #include <algorithm>
 
 #include <glm/glm.hpp>
 
 #include <QImage>
-#include <QVector2D>
 
 template<typename T>
 double fetch(T const* data, const ssize_t width, const ssize_t height, const size_t rowStride,
@@ -53,9 +53,9 @@ double sample(T const* data, const size_t width, const size_t height, const size
 int main(int argc, char** argv)
 try
 {
-    if(argc != 6)
+    if(argc != 6 && argc != 7)
     {
-        std::cerr << "Usage: " << argv[0] << " sphereRadiusInKM kmPerUnitValue inputFile outputFileName normalMapHeightInPixels\n";
+        std::cerr << "Usage: " << argv[0] << " sphereRadiusInKM kmPerUnitValue inputFile outputFileName normalMapHeightInPixels [supersamplingLevel]\n";
         return 1;
     }
 
@@ -66,6 +66,8 @@ try
 
     const auto normalMapHeight = std::stoul(argv[5]);
     const auto normalMapWidth = 2*normalMapHeight;
+
+    const unsigned numSamples = argc<7 ? 1 : std::max(1ul, std::stoul(argv[6]));
 
     QImage in(inFileName);
     if(in.isNull())
@@ -91,6 +93,26 @@ try
     }
     const auto rowStride = strideInBytes / sizeof data[0];
 
+    std::vector<glm::dvec2> samplesCenter(numSamples);
+    std::vector<glm::dvec2> samplesEast  (numSamples);
+    std::vector<glm::dvec2> samplesNorth (numSamples);
+    if(numSamples<=1)
+        samplesCenter = samplesEast = samplesNorth = {glm::dvec2(0,0)};
+    else
+    {
+        std::mt19937 mt(std::random_device{}());
+        std::uniform_real_distribution<double> dist(-0.5,0.5);
+        static const auto rng=[&](){return dist(mt);};
+
+        for(auto& sample : samplesCenter)
+            sample = glm::dvec2(rng(), rng());
+        for(auto& sample : samplesEast)
+            sample = glm::dvec2(rng(), rng());
+        for(auto& sample : samplesNorth)
+            sample = glm::dvec2(rng(), rng());
+    }
+
+
     const size_t outBytesPerPixel = 3;
     std::vector<double> outData(normalMapWidth*normalMapHeight*outBytesPerPixel);
     for(size_t i = 0; i < normalMapWidth; ++i)
@@ -104,26 +126,50 @@ try
             using namespace glm;
             using namespace std;
 
+            double centerRadius = 0;
+            double eastRadius = 0;
+            double northRadius = 0;
+
             const double centerLon = (2*u-1)*M_PI;
             const double centerLat  = (2*v-1)*(M_PI/2);
-            const double centerHeight = kmPerUnit*sample(data, width, height, rowStride, centerLon, centerLat);
-            const double centerRadius = sphereRadius + centerHeight;
+
+            const double deltaLon = (2*M_PI/normalMapWidth) / cos(centerLat);
+            const double eastLon = centerLon + deltaLon;
+            const double eastLat = centerLat;
+
+            const auto deltaLat = M_PI/normalMapHeight;
+            const double northLat = centerLat + deltaLat;
+            const double northLon = centerLon;
+
+            for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
+            {
+                const double centerHeight = kmPerUnit*sample(data, width, height, rowStride,
+                                                             centerLon + samplesCenter[sampleN].x*deltaLon,
+                                                             centerLat + samplesCenter[sampleN].y*deltaLat);
+                centerRadius += sphereRadius + centerHeight;
+
+                const double eastHeight = kmPerUnit*sample(data, width, height, rowStride,
+                                                           eastLon + samplesEast[sampleN].x*deltaLon,
+                                                           eastLat + samplesEast[sampleN].y*deltaLat);
+                eastRadius += sphereRadius + eastHeight;
+
+                const double northHeight = kmPerUnit*sample(data, width, height, rowStride,
+                                                            northLon + samplesNorth[sampleN].x*deltaLon,
+                                                            northLat + samplesNorth[sampleN].y*deltaLat);
+                northRadius += sphereRadius + northHeight;
+            }
+            centerRadius /= numSamples;
+            eastRadius   /= numSamples;
+            northRadius  /= numSamples;
+
             const dvec3 centerDir = dvec3(cos(centerLon) * cos(centerLat),
                                           sin(centerLon) * cos(centerLat),
                                           sin(centerLat));
             const dvec3 centerPoint = centerRadius * centerDir;
 
-            const double eastLon = centerLon + (2*M_PI/normalMapWidth) / cos(centerLat);
-            const double eastLat = centerLat;
-            const double eastHeight = kmPerUnit*sample(data, width, height, rowStride, eastLon, eastLat);
-            const double eastRadius = sphereRadius + eastHeight;
             const dvec3 eastPoint = eastRadius * dvec3(cos(eastLon) * cos(eastLat),
                                                        sin(eastLon) * cos(eastLat),
                                                        sin(eastLat));
-            const double northLon = centerLon;
-            const double northLat = centerLat + (M_PI/normalMapHeight);
-            const double northHeight = kmPerUnit*sample(data, width, height, rowStride, northLon, northLat);
-            const double northRadius = sphereRadius + northHeight;
             const dvec3 northPoint = northRadius * dvec3(cos(northLon) * cos(northLat),
                                                          sin(northLon) * cos(northLat),
                                                          sin(northLat));

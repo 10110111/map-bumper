@@ -1,4 +1,5 @@
 #include <cmath>
+#include <chrono>
 #include <random>
 #include <iostream>
 #include <algorithm>
@@ -115,6 +116,7 @@ try
 
     const size_t outBytesPerPixel = 3;
     std::vector<double> outData(normalMapWidth*normalMapHeight*outBytesPerPixel);
+    auto time0 = std::chrono::steady_clock::now();
     for(size_t i = 0; i < normalMapWidth; ++i)
     {
         const auto u = (0.5 + i) / normalMapWidth;
@@ -189,6 +191,12 @@ try
             outData[pixelPosInData + 0] = normalA+0.5;
             outData[pixelPosInData + 1] = normalB+0.5;
             outData[pixelPosInData + 2] = normalC;
+        }
+        auto time1 = std::chrono::steady_clock::now();
+        if(time1 - time0 > std::chrono::seconds(5))
+        {
+            std::cerr << std::round((i+1) * 10000. / normalMapWidth)/100. << "% done\n";
+            time0 = time1;
         }
     }
 

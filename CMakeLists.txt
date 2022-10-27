@@ -21,8 +21,8 @@ find_package(Qt5 5.9 REQUIRED Core Gui)
 add_executable(equirect2cubemap equirect2cubemap.cpp)
 target_link_libraries(equirect2cubemap Qt5::Core Qt5::Gui)
 
-add_executable(equirect2normalmap equirect2normalmap.cpp)
-target_link_libraries(equirect2normalmap Qt5::Core Qt5::Gui)
+add_executable(heightmap2normalmap heightmap2normalmap.cpp)
+target_link_libraries(heightmap2normalmap Qt5::Core Qt5::Gui)
 
-add_executable(equirect2horizonmap equirect2horizonmap.cpp)
-target_link_libraries(equirect2horizonmap Qt5::Core Qt5::Gui)
+add_executable(heightmap2horizonmap heightmap2horizonmap.cpp)
+target_link_libraries(heightmap2horizonmap Qt5::Core Qt5::Gui)

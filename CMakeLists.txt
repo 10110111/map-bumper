@@ -23,3 +23,6 @@ target_link_libraries(equirect2cubemap Qt5::Core Qt5::Gui)
 
 add_executable(equirect2normalmap equirect2normalmap.cpp)
 target_link_libraries(equirect2normalmap Qt5::Core Qt5::Gui)
+
+add_executable(equirect2horizonmap equirect2horizonmap.cpp)
+target_link_libraries(equirect2horizonmap Qt5::Core Qt5::Gui)

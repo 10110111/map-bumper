@@ -1,0 +1,60 @@
+This repo includes two related tools to convert height maps to normal and horizon map, and a tool to convert equirectangular map to a cube map.
+
+### heightmap2normalmap
+
+This tool takes an image with size 2n×n — a height map of a sphere in equirectangular projection — and outputs a normal map, also in equirectangular projection. Its usage is as follows:
+```
+heightmap2normalmap sphereRadiusInKM kmPerUnitValue inputFile outputFileName normalMapHeightInPixels [supersamplingLevel]
+```
+Parameters:
+ * `sphereRadiusInKM` is the radius of the sphere (e.g. a planet) that's used as a reference relative to which the altitudes are computed.
+ * `kmPerUnitValue` denotes altitude increase per unit value of a pixel. E.g. if the height map spans altitudes from 0 to 10 km, and the image has 8 bits per pixel, then `kmPerUnitValue` has to be set to 0.0392156862745098 (which is 10/255).
+ * `inputFile` the height map file path.
+ * `outputFileName` the output normal map file path.
+ * `normalMapHeightInPixels` height of the output image in pixels (width will be twice that).
+ * `supersamplingLevel` (optional) enables filtering of the input data to avoid aliasing. If omitted, it's assumed to be `1`.
+
+The normals are computed as projections of the surface normal to the following vectors:
+
+ 1. East,
+ 2. North,
+ 3. Zenith.
+
+After computing, 0.5 is added to the first two values, and then all three are multiplied by 255 to fit into the 8 bpc image.
+
+### heightmap2horizonmap
+
+This tool is like heightmap2normalmap, but instead of a normal map it generates a map that contains horizon elevations in four directions: North, East, South, West. Such a map is useful for rendering of shadows during bump mapping (the classical bump mapping that uses only the map of normals is unable to render shadows).
+Its usage is as follows:
+```
+heightmap2horizonmap sphereRadiusInKM kmPerUnitValue inputFile outputFileName outputHeightInPixels
+```
+The parameters are the same as those for `heightmap2normalmap`, but supersampling is not supported.
+The horizon elevations are encoded in the image as follows.
+
+ 1. Let `sinHorizonElevation` be sine of the elevation computed in a given direction.
+ 2. Compute `(sign(sinHorizonElevation)*sqrt(abs(sinHorizonElevation)))/2+0.5` for each of the four directions.
+ 3. Multiply result by 255 to fit in 8 bpc.
+ 4. Place the values computed in R, G, B, A channels in the following order: North, East, South, West.
+
+So, when rendering a shadow, do the reverse:
+
+ 1. Sample the texture at latitude and longitude corresponding to current location of the fragment.
+ 2. Decode the values to get actual elevations: if we name a value sampled `x`, then, with `n=(x-0.5)*2`, the elevation will be `asin(sign(n)*n*n)`.
+ 2. Determine azimuth of the Sun.
+ 3. Use the azimuth to interpolate between the elevations in the four directions. It may be Fourier interpolation, or even a simple linear interpolation may suffice.
+ 4. Having now obtained the elevation at the azimuth of the Sun, check whether elevation of the Sun is higher that the value obtained. If yes, then the fragment is lit, otherwise it's in the shadow. An improvement to include penumbra may be like
+    `horizonShadowCoefficient = smoothstep(-0.25*PI/180, 0.25*PI/180, sunElevation - horizElevation)`.
+
+### equirect2cubemap
+
+This tool is unrelated to the previous two.  It takes an image with size 2n×n — a map of a sphere in equirectangular projection — and outputs 6 faces of a cube map. Its usage is as follows:
+```
+equirect2cubemap inputFile outputFilePattern cubeMapSideInPixels [supersamplingLevel]
+```
+Parameters:
+ * `inputFile` is the input image in equirectangular projection.
+ * `cubeMapSideInPixels` is the size of each face image (side of the square in pixels).
+ * `outputFilePattern` denotes the name of the output files. A placeholder `%1` is used to place the distinguishing parts of the name. E.g. a pattern `face-%1.png` will yield filenames like `face-0-lon0.png`, `face-2-east.png` etc.
+ * `supersamplingLevel` (optional) enables filtering of the input data to avoid aliasing. If omitted, it's assumed to be `1`.
+

@@ -16,14 +16,14 @@ endif()
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
-find_package(Qt5Core 5.13 REQUIRED)
-find_package(Qt5Gui 5.13 REQUIRED)
+find_package(Qt6Core 6.3 REQUIRED)
+find_package(Qt6Gui 6.3 REQUIRED)
 
 add_executable(equirect2cubemap equirect2cubemap.cpp)
-target_link_libraries(equirect2cubemap Qt5::Core Qt5::Gui)
+target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 
 add_executable(heightmap2normalmap heightmap2normalmap.cpp)
-target_link_libraries(heightmap2normalmap Qt5::Core Qt5::Gui)
+target_link_libraries(heightmap2normalmap Qt6::Core Qt6::Gui)
 
 add_executable(heightmap2horizonmap heightmap2horizonmap.cpp)
-target_link_libraries(heightmap2horizonmap Qt5::Core Qt5::Gui)
+target_link_libraries(heightmap2horizonmap Qt6::Core Qt6::Gui)

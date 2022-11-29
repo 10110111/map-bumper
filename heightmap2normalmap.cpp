@@ -13,7 +13,7 @@ double fetch(T const* data, const ssize_t width, const ssize_t height, const siz
              const ssize_t requestedX, const ssize_t requestedY)
 {
     const auto x = (requestedX+width) % width;
-    const auto y = std::clamp(requestedY, 0, height-1);
+    const auto y = std::clamp(requestedY, ssize_t(0), height-1);
 
     return data[x + y*rowStride];
 }

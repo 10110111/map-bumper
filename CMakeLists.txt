@@ -16,7 +16,8 @@ endif()
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
-find_package(Qt5 5.9 REQUIRED Core Gui)
+find_package(Qt5Core 5.13 REQUIRED)
+find_package(Qt5Gui 5.13 REQUIRED)
 
 add_executable(equirect2cubemap equirect2cubemap.cpp)
 target_link_libraries(equirect2cubemap Qt5::Core Qt5::Gui)

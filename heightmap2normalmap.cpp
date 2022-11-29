@@ -51,6 +51,14 @@ double sample(T const* data, const size_t width, const size_t height, const size
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
 
+//! Reduces input value to [-PI, PI] range
+double normalizeLon(double lon)
+{
+    while(lon >  M_PI) lon -= M_PI*2;
+    while(lon < -M_PI) lon += M_PI*2;
+    return lon;
+}
+
 int main(int argc, char** argv)
 try
 {
@@ -146,18 +154,18 @@ try
             for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
             {
                 const double centerHeight = kmPerUnit*sample(data, width, height, rowStride,
-                                                             centerLon + samplesCenter[sampleN].x*deltaLon,
-                                                             centerLat + samplesCenter[sampleN].y*deltaLat);
+                                                             normalizeLon(centerLon + samplesCenter[sampleN].x*deltaLon),
+                                                                          centerLat + samplesCenter[sampleN].y*deltaLat);
                 centerRadius += sphereRadius + centerHeight;
 
                 const double eastHeight = kmPerUnit*sample(data, width, height, rowStride,
-                                                           eastLon + samplesEast[sampleN].x*deltaLon,
-                                                           eastLat + samplesEast[sampleN].y*deltaLat);
+                                                           normalizeLon(eastLon + samplesEast[sampleN].x*deltaLon),
+                                                                        eastLat + samplesEast[sampleN].y*deltaLat);
                 eastRadius += sphereRadius + eastHeight;
 
                 const double northHeight = kmPerUnit*sample(data, width, height, rowStride,
-                                                            northLon + samplesNorth[sampleN].x*deltaLon,
-                                                            northLat + samplesNorth[sampleN].y*deltaLat);
+                                                            normalizeLon(northLon + samplesNorth[sampleN].x*deltaLon),
+                                                                         northLat + samplesNorth[sampleN].y*deltaLat);
                 northRadius += sphereRadius + northHeight;
             }
             centerRadius /= numSamples;

@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include <QFile>
 #include <QImage>
 
 template<typename T> T step(T edge, T x) { return x<edge ? 0 : 1; }
@@ -23,27 +24,25 @@ try
     const std::string outFileName = argv[3];
 
     constexpr int wavelengths[] = {360,415,566,604,643,689};
-    std::vector<std::vector<uint8_t>> dataPerWL(std::size(wavelengths));
+    constexpr size_t numWLs = std::size(wavelengths);
+    std::vector<std::vector<float>> dataPerWL(numWLs);
     ssize_t width = -1, height = -1, rowStride = -1;
-    for(size_t n=0; n<std::size(wavelengths); ++n)
+    for(size_t wlN=0; wlN<std::size(wavelengths); ++wlN)
     {
-        const auto filename = inDir + "/WAC_HAPKE_" + std::to_string(wavelengths[n]) + "NM_" + sector + ".tiff";
-        QImage in(filename.c_str());
-        if(in.isNull())
+        const auto filename = inDir + "/WAC_HAPKE_" + std::to_string(wavelengths[wlN])
+                                    + "NM_" + sector + ".IMG";
+        QFile file(filename.c_str());
+        if(!file.open(QFile::ReadOnly))
         {
-            std::cerr << "Failed to read image from " << filename << "\n";
+            std::cerr << "Failed to open " << filename << " for reading: "
+                      << file.errorString().toStdString() << "\n";
             return 1;
         }
-        if(!in.isGrayscale())
-        {
-            std::cerr << "Input image " << filename << " is not grayscale\n";
-            return 1;
-        }
-        in = in.convertToFormat(QImage::Format_Grayscale8);
+        file.seek(27360);
 
-        const auto currWidth  = in.width();
-        const auto currHeight = in.height();
-        const auto currRowStride = in.bytesPerLine();
+        const auto currWidth  = 6840;
+        const auto currHeight = 5321;
+        const auto currRowStride = currWidth;
         if(width<0)
             width = currWidth;
         if(height<0)
@@ -56,8 +55,14 @@ try
             return 1;
         }
 
-        dataPerWL[n].resize(rowStride*height);
-        std::copy_n(in.bits(), dataPerWL[n].size(), dataPerWL[n].data());
+        dataPerWL[wlN].resize(rowStride*height);
+        const qint64 sizeToRead = dataPerWL[wlN].size() * sizeof dataPerWL[wlN][0];
+        if(file.read(reinterpret_cast<char*>(dataPerWL[wlN].data()), sizeToRead) != sizeToRead)
+        {
+            std::cerr << "Failed to read " << filename << ": "
+                      << file.errorString().toStdString() << "\n";
+            return 1;
+        }
     }
 
     // These values were computed from CIE 1931 functions using triangular
@@ -70,16 +75,16 @@ try
                                        { 45.0832972872074  ,-3.37526405235609   ,-0.491743508354297 },
                                        { 5.39818758379944  ,-0.559432795037625  ,-0.0396279820939476}};
 
-    static_assert(std::size(rgbsPerWL) == std::size(wavelengths));
+    static_assert(std::size(rgbsPerWL) == numWLs);
     std::vector<double> out(rowStride*height*3);
     for(size_t n = 0; n < dataPerWL[0].size(); ++n)
     {
         double r = 0, g = 0, b = 0;
-        for(size_t i = 0; i < dataPerWL.size(); ++i)
+        for(size_t wlN = 0; wlN < numWLs; ++wlN)
         {
-            r += dataPerWL[i][n] * rgbsPerWL[i][0];
-            g += dataPerWL[i][n] * rgbsPerWL[i][1];
-            b += dataPerWL[i][n] * rgbsPerWL[i][2];
+            r += dataPerWL[wlN][n] * rgbsPerWL[wlN][0];
+            g += dataPerWL[wlN][n] * rgbsPerWL[wlN][1];
+            b += dataPerWL[wlN][n] * rgbsPerWL[wlN][2];
         }
         out[3*n+0] = r;
         out[3*n+1] = g;

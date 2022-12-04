@@ -2,6 +2,8 @@
 
 #include <QFile>
 #include <QImage>
+#include <QByteArray>
+#include <QRegularExpression>
 
 template<typename T> T step(T edge, T x) { return x<edge ? 0 : 1; }
 double sRGBTransferFunction(const double c)
@@ -38,10 +40,21 @@ try
                       << file.errorString().toStdString() << "\n";
             return 1;
         }
-        file.seek(27360);
+        QByteArray header(27360, '\0');
+        if(file.read(header.data(), header.size()) != header.size())
+        {
+            std::cerr << "Failed to read header of " << filename << ": "
+                      << file.errorString().toStdString() << "\n";
+            return 1;
+        }
+        const auto currWidth = QRegularExpression("SAMPLE_LAST_PIXEL\\s*=\\s*([0-9]+)\\b").match(header).captured(1).toUInt();
+        const auto currHeight= QRegularExpression("LINE_LAST_PIXEL\\s*=\\s*([0-9]+)\\b").match(header).captured(1).toUInt();
+        if(currWidth==0 || currHeight==0)
+        {
+            std::cerr << "Failed to find image dimensions\n";
+            return 1;
+        }
 
-        const auto currWidth  = 6840;
-        const auto currHeight = 5321;
         const auto currRowStride = currWidth;
         if(width<0)
             width = currWidth;

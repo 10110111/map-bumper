@@ -14,9 +14,9 @@ double sRGBTransferFunction(const double c)
 int main(int argc, char** argv)
 try
 {
-    if(argc != 4)
+    if(argc != 4 && argc != 5)
     {
-        std::cerr << "Usage: " << argv[0] << " inputDir sector outputFile\n";
+        std::cerr << "Usage: " << argv[0] << " inputDir sector outputFile [valueScale]\n";
         std::cerr << "\"Sector\" is the geographic position part of the filename e.g. \"E350N0450\".\n";
         return 1;
     }
@@ -24,6 +24,7 @@ try
     const std::string inDir  = argv[1];
     const std::string sector = argv[2];
     const std::string outFileName = argv[3];
+    const double valueScale = (argc==5 ? std::stod(argv[4]) : 1.) / 105.;
 
     constexpr int wavelengths[] = {360,415,566,604,643,689};
     constexpr size_t numWLs = std::size(wavelengths);
@@ -103,11 +104,10 @@ try
         out[3*n+1] = g;
         out[3*n+2] = b;
     }
-    const auto max = *std::max_element(out.begin(), out.end());
 
     std::vector<uint8_t> outImgData(rowStride*height*3);
     for(size_t n = 0; n < out.size(); ++n)
-        outImgData[n] = 255.*sRGBTransferFunction(std::clamp(out[n] / max, 0., 1.));
+        outImgData[n] = 255.*sRGBTransferFunction(std::clamp(out[n] * valueScale, 0., 1.));
     const QImage outImg(outImgData.data(), width, height, rowStride*3, QImage::Format_RGB888);
     std::cerr << "Saving output file with dimensions " << width << " × " << height << "... ";
     if(!outImg.save(outFileName.c_str()))

@@ -94,15 +94,32 @@ try
     for(size_t n = 0; n < dataPerWL[0].size(); ++n)
     {
         double r = 0, g = 0, b = 0;
+        bool good = true;
         for(size_t wlN = 0; wlN < numWLs; ++wlN)
         {
-            r += dataPerWL[wlN][n] * rgbsPerWL[wlN][0];
-            g += dataPerWL[wlN][n] * rgbsPerWL[wlN][1];
-            b += dataPerWL[wlN][n] * rgbsPerWL[wlN][2];
+            const auto value = dataPerWL[wlN][n];
+            if(value < -1e38 || !std::isfinite(value))
+            {
+                good = false;
+                break;
+            }
+            r += value * rgbsPerWL[wlN][0];
+            g += value * rgbsPerWL[wlN][1];
+            b += value * rgbsPerWL[wlN][2];
         }
-        out[3*n+0] = r;
-        out[3*n+1] = g;
-        out[3*n+2] = b;
+        if(good)
+        {
+            out[3*n+0] = r;
+            out[3*n+1] = g;
+            out[3*n+2] = b;
+        }
+        else
+        {
+            // Mark with magenta
+            out[3*n+0] = 1/valueScale;
+            out[3*n+1] = 0;
+            out[3*n+2] = 1/valueScale;
+        }
     }
 
     std::vector<uint8_t> outImgData(rowStride*height*3);

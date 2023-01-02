@@ -61,22 +61,28 @@ double sample(T const* data, const size_t width, const size_t height,
 int main(int argc, char** argv)
 try
 {
-    if(argc != 4 && argc != 5)
+    if(argc != 4 && argc != 5 && argc != 6)
     {
-        std::cerr << "Usage: " << argv[0] << " inputFile outputFilePattern cubeMapSideInPixels [supersamplingLevel]\n";
+        std::cerr << "Usage: " << argv[0] << "[-r] inputFile outputFilePattern cubeMapSideInPixels [supersamplingLevel]\n";
+        std::cerr << "Options:\n"
+                     "   -r     Repeat each edge in both of its neighboring faces\n";
         return 1;
     }
+    int nextArgN = 1;
+    const bool repeatEdgeInBothNeighbors = argv[nextArgN] == std::string("-r");
+    if(repeatEdgeInBothNeighbors)
+        ++nextArgN;
 
-    const char*const inFileName  = argv[1];
-    const auto outFileNamePattern = QString(argv[2]);
+    const char*const inFileName  = argv[nextArgN++];
+    const auto outFileNamePattern = QString(argv[nextArgN++]);
     if(!outFileNamePattern.contains("%1"))
     {
         std::cerr << "File name pattern must contain a %1 placeholder that will be replaced with face name when saving the faces\n";
         return 1;
     }
 
-    const auto cubeMapSide = std::stoul(argv[3]);
-    const unsigned numSamples = argc==4 ? 1 : std::stoul(argv[4]);
+    const auto cubeMapSide = std::stoul(argv[nextArgN++]);
+    const unsigned numSamples = argc==4 ? 1 : std::stoul(argv[nextArgN++]);
 
     QImage in(inFileName);
     if(in.isNull())
@@ -113,18 +119,17 @@ try
             sample = QVector2D(rng(), rng());
     }
 
-#define FACE_LOOP(DATA_NAME, X_EXPR, Y_EXPR, Z_EXPR)                                \
-    std::vector<double> DATA_NAME(cubeMapSide*cubeMapSide*channelsPerPixel);        \
+#define FACE_LOOP(DATA_NAME, UV_ORIGIN, X_EXPR, Y_EXPR, Z_EXPR)                     \
     for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)                      \
     {                                                                               \
         for(size_t i = 0; i < cubeMapSide; ++i)                                     \
         {                                                                           \
             const auto I = i + samples[sampleN].x();                                \
-            const auto u = (0.5 + I) / cubeMapSide;                                 \
+            const auto u = (UV_ORIGIN + I) / (cubeMapSide+2*UV_ORIGIN-1);           \
             for(size_t j = 0; j < cubeMapSide; ++j)                                 \
             {                                                                       \
                 const auto J = j + samples[sampleN].y();                            \
-                const auto v = (0.5+(cubeMapSide - 1 - J)) / cubeMapSide;           \
+                const auto v = (UV_ORIGIN+(cubeMapSide - 1 - J)) / (cubeMapSide+2*UV_ORIGIN-1); \
                 const auto pixelPosInData = (i + j*cubeMapSide)*channelsPerPixel;   \
                 const auto x = X_EXPR;                                              \
                 const auto y = Y_EXPR;                                              \
@@ -149,12 +154,31 @@ try
     }                                                                               \
     do{}while(false)
 
-    FACE_LOOP(outDataNorth ,   u*2-1 ,   v*2-1 ,   1);
-    FACE_LOOP(outDataSouth ,   u*2-1 , -(v*2-1),  -1);
-    FACE_LOOP(outDataWest  ,   u*2-1 ,    -1   , v*2-1);
-    FACE_LOOP(outDataLon0  ,     1   ,   u*2-1 , v*2-1);
-    FACE_LOOP(outDataEast  , -(u*2-1),     1   , v*2-1);
-    FACE_LOOP(outDataLon180,    -1   , -(u*2-1), v*2-1);
+    const auto dataSize = cubeMapSide*cubeMapSide*channelsPerPixel;
+    std::vector<double> outDataNorth (dataSize);
+    std::vector<double> outDataSouth (dataSize);
+    std::vector<double> outDataWest  (dataSize);
+    std::vector<double> outDataLon0  (dataSize);
+    std::vector<double> outDataEast  (dataSize);
+    std::vector<double> outDataLon180(dataSize);
+    if(repeatEdgeInBothNeighbors)
+    {
+        FACE_LOOP(outDataNorth , 0,   u*2-1 ,   v*2-1 ,   1);
+        FACE_LOOP(outDataSouth , 0,   u*2-1 , -(v*2-1),  -1);
+        FACE_LOOP(outDataWest  , 0,   u*2-1 ,    -1   , v*2-1);
+        FACE_LOOP(outDataLon0  , 0,     1   ,   u*2-1 , v*2-1);
+        FACE_LOOP(outDataEast  , 0, -(u*2-1),     1   , v*2-1);
+        FACE_LOOP(outDataLon180, 0,    -1   , -(u*2-1), v*2-1);
+    }
+    else
+    {
+        FACE_LOOP(outDataNorth , 0.5,   u*2-1 ,   v*2-1 ,   1);
+        FACE_LOOP(outDataSouth , 0.5,   u*2-1 , -(v*2-1),  -1);
+        FACE_LOOP(outDataWest  , 0.5,   u*2-1 ,    -1   , v*2-1);
+        FACE_LOOP(outDataLon0  , 0.5,     1   ,   u*2-1 , v*2-1);
+        FACE_LOOP(outDataEast  , 0.5, -(u*2-1),     1   , v*2-1);
+        FACE_LOOP(outDataLon180, 0.5,    -1   , -(u*2-1), v*2-1);
+    }
 
     const QString faceTypes[]={"3-west", "0-lon0", "2-east", "1-lon180", "5-north","4-south"};
     unsigned faceN=0;

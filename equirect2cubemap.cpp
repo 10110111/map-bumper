@@ -58,31 +58,79 @@ double sample(T const* data, const size_t width, const size_t height,
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
 
+int usage(const char*const argv0, const int ret)
+{
+    std::cerr << "Usage: " << argv0 << "[options...] inputFile outputFilePattern cubeMapSideInPixels [supersamplingLevel]\n"
+                 "Output file pattern must contain a %1 placeholder that will be replaced with face name when saving the faces\n"
+                 "Options:\n"
+                 "   -r                             Repeat each edge in both of its neighboring faces\n"
+                 "   -e, --equiang, --equiangular   Make an equi-angular cube map\n"
+                 ;
+    return ret;
+}
+
 int main(int argc, char** argv)
 try
 {
-    if(argc != 4 && argc != 5 && argc != 6)
-    {
-        std::cerr << "Usage: " << argv[0] << "[-r] inputFile outputFilePattern cubeMapSideInPixels [supersamplingLevel]\n";
-        std::cerr << "Options:\n"
-                     "   -r     Repeat each edge in both of its neighboring faces\n";
-        return 1;
-    }
-    int nextArgN = 1;
-    const bool repeatEdgeInBothNeighbors = argv[nextArgN] == std::string("-r");
-    if(repeatEdgeInBothNeighbors)
-        ++nextArgN;
+    QString inFileName;
+    QString outFileNamePattern;
+    bool repeatEdgeInBothNeighbors = false;
+    unsigned cubeMapSide = 0;
+    unsigned numSamples = 1;
+    bool equiangular = false;
 
-    const char*const inFileName  = argv[nextArgN++];
-    const auto outFileNamePattern = QString(argv[nextArgN++]);
+    int totalPositionalArgumentsFound = 0;
+    for(int n = 1; n < argc; ++n)
+    {
+        if(argv[n][0]!='-')
+        {
+            // Must be a positional argument
+            switch(totalPositionalArgumentsFound)
+            {
+            case 0:
+                inFileName = argv[n];
+                break;
+            case 1:
+                outFileNamePattern = argv[n];
+                break;
+            case 2:
+                cubeMapSide = std::stoul(argv[n]);
+                break;
+            case 3:
+                numSamples = std::stoul(argv[n]);
+                break;
+            default:
+                std::cerr << "Extraneous positional argument\n";
+                return usage(argv[0], 1);
+            }
+            ++totalPositionalArgumentsFound;
+            continue;
+        }
+        // OK, we got a switch
+        const std::string arg = argv[n];
+        if(arg == "-h" || arg == "--help")
+            return usage(argv[0], 0);
+        else if(arg == "-r")
+            repeatEdgeInBothNeighbors = true;
+        else if(arg == "-e" || arg == "--equiang" || arg == "--equiangular")
+            equiangular = true;
+        else
+        {
+            std::cerr << "Unknown switch " << argv[n] << "\n";
+            return usage(argv[0], 1);
+        }
+    }
+    if(totalPositionalArgumentsFound < 3)
+    {
+        std::cerr << "Too few positional arguments supplied\n";
+        return usage(argv[0], 1);
+    }
+
     if(!outFileNamePattern.contains("%1"))
     {
         std::cerr << "File name pattern must contain a %1 placeholder that will be replaced with face name when saving the faces\n";
         return 1;
     }
-
-    const auto cubeMapSide = std::stoul(argv[nextArgN++]);
-    const unsigned numSamples = argc==4 ? 1 : std::stoul(argv[nextArgN++]);
 
     QImage in(inFileName);
     if(in.isNull())
@@ -125,11 +173,13 @@ try
         for(size_t i = 0; i < cubeMapSide; ++i)                                     \
         {                                                                           \
             const auto I = i + samples[sampleN].x();                                \
-            const auto u = (UV_ORIGIN + I) / (cubeMapSide+2*UV_ORIGIN-1);           \
+            auto u = (UV_ORIGIN + I) / (cubeMapSide+2*UV_ORIGIN-1);                 \
+            if(equiangular) u = (std::tan(M_PI/2*(u-0.5))+1)*0.5;                   \
             for(size_t j = 0; j < cubeMapSide; ++j)                                 \
             {                                                                       \
                 const auto J = j + samples[sampleN].y();                            \
-                const auto v = (UV_ORIGIN+(cubeMapSide - 1 - J)) / (cubeMapSide+2*UV_ORIGIN-1); \
+                auto v = (UV_ORIGIN+(cubeMapSide - 1 - J)) / (cubeMapSide+2*UV_ORIGIN-1); \
+                if(equiangular) v = (std::tan(M_PI/2*(v-0.5))+1)*0.5;               \
                 const auto pixelPosInData = (i + j*cubeMapSide)*channelsPerPixel;   \
                 const auto x = X_EXPR;                                              \
                 const auto y = Y_EXPR;                                              \

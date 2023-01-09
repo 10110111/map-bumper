@@ -226,6 +226,87 @@ try
         z.join();
         e.join();
         o.join();
+        // Our supersampling works in different areas on the edges, which yields
+        // non-identical results in neighboring faces. This is not correct, but fixing
+        // it seems a bit elaborate, while the improvement seems not too significant.
+        // Instead, we'll copy the edge from one neighbor to another to make sure that
+        // they are the same.
+#define COPY_VERT_LINE_RIGHT_TO_LEFT(LEFT_DATA,RIGHT_DATA)                                  \
+        for(unsigned n = 0; n < cubeMapSide; ++n)                                           \
+        {                                                                                   \
+            const auto pixelPosInSrc = channelsPerPixel*(n*cubeMapSide);                    \
+            const auto pixelPosInDst = channelsPerPixel*(n*cubeMapSide+cubeMapSide-1);      \
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)               \
+                LEFT_DATA[pixelPosInDst+subpixelN] = RIGHT_DATA[pixelPosInSrc+subpixelN];   \
+        } do{}while(0)
+        COPY_VERT_LINE_RIGHT_TO_LEFT(outDataLon0,outDataEast);
+        COPY_VERT_LINE_RIGHT_TO_LEFT(outDataEast,outDataLon180);
+        COPY_VERT_LINE_RIGHT_TO_LEFT(outDataLon180,outDataWest);
+        COPY_VERT_LINE_RIGHT_TO_LEFT(outDataWest,outDataLon0);
+        // North to sides: west
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(cubeMapSide*(cubeMapSide-1)+n);
+            const auto pixelPosInDst = channelsPerPixel*n;
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataWest[pixelPosInDst+subpixelN] = outDataNorth[pixelPosInSrc+subpixelN];
+        }
+        // North to sides: east
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(cubeMapSide-1-n);
+            const auto pixelPosInDst = channelsPerPixel*n;
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataEast[pixelPosInDst+subpixelN] = outDataNorth[pixelPosInSrc+subpixelN];
+        }
+        // North to sides: longitude 0
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(cubeMapSide*cubeMapSide-1-n*cubeMapSide);
+            const auto pixelPosInDst = channelsPerPixel*n;
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataLon0[pixelPosInDst+subpixelN] = outDataNorth[pixelPosInSrc+subpixelN];
+        }
+        // North to sides: longitude 180
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(n*cubeMapSide);
+            const auto pixelPosInDst = channelsPerPixel*n;
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataLon180[pixelPosInDst+subpixelN] = outDataNorth[pixelPosInSrc+subpixelN];
+        }
+        // South to sides: west
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*n;
+            const auto pixelPosInDst = channelsPerPixel*(cubeMapSide*(cubeMapSide-1)+n);
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataWest[pixelPosInDst+subpixelN] = outDataSouth[pixelPosInSrc+subpixelN];
+        }
+        // South to sides: east
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(cubeMapSide*cubeMapSide-1-n);
+            const auto pixelPosInDst = channelsPerPixel*(cubeMapSide*(cubeMapSide-1)+n);
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataEast[pixelPosInDst+subpixelN] = outDataSouth[pixelPosInSrc+subpixelN];
+        }
+        // South to sides: longitude 0
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(cubeMapSide-1+n*cubeMapSide);
+            const auto pixelPosInDst = channelsPerPixel*(cubeMapSide*(cubeMapSide-1)+n);
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataLon0[pixelPosInDst+subpixelN] = outDataSouth[pixelPosInSrc+subpixelN];
+        }
+        // South to sides: longitude 180
+        for(unsigned n = 0; n < cubeMapSide; ++n)
+        {
+            const auto pixelPosInSrc = channelsPerPixel*(cubeMapSide*(cubeMapSide-1)-n*cubeMapSide);
+            const auto pixelPosInDst = channelsPerPixel*(cubeMapSide*(cubeMapSide-1)+n);
+            for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
+                outDataLon180[pixelPosInDst+subpixelN] = outDataSouth[pixelPosInSrc+subpixelN];
+        }
     }
     else
     {

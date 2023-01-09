@@ -3,6 +3,7 @@
 #include <iostream>
 #include <algorithm>
 
+#include <thread>
 #include <QImage>
 #include <QVector2D>
 
@@ -213,21 +214,33 @@ try
     std::vector<double> outDataLon180(dataSize);
     if(repeatEdgeInBothNeighbors)
     {
-        FACE_LOOP(outDataNorth , 0,   u*2-1 ,   v*2-1 ,   1);
-        FACE_LOOP(outDataSouth , 0,   u*2-1 , -(v*2-1),  -1);
-        FACE_LOOP(outDataWest  , 0,   u*2-1 ,    -1   , v*2-1);
-        FACE_LOOP(outDataLon0  , 0,     1   ,   u*2-1 , v*2-1);
-        FACE_LOOP(outDataEast  , 0, -(u*2-1),     1   , v*2-1);
-        FACE_LOOP(outDataLon180, 0,    -1   , -(u*2-1), v*2-1);
+        std::thread n([&]{ FACE_LOOP(outDataNorth , 0,   u*2-1 ,   v*2-1 ,   1  ); });
+        std::thread s([&]{ FACE_LOOP(outDataSouth , 0,   u*2-1 , -(v*2-1),  -1  ); });
+        std::thread w([&]{ FACE_LOOP(outDataWest  , 0,   u*2-1 ,    -1   , v*2-1); });
+        std::thread z([&]{ FACE_LOOP(outDataLon0  , 0,     1   ,   u*2-1 , v*2-1); });
+        std::thread e([&]{ FACE_LOOP(outDataEast  , 0, -(u*2-1),     1   , v*2-1); });
+        std::thread o([&]{ FACE_LOOP(outDataLon180, 0,    -1   , -(u*2-1), v*2-1); });
+        n.join();
+        s.join();
+        w.join();
+        z.join();
+        e.join();
+        o.join();
     }
     else
     {
-        FACE_LOOP(outDataNorth , 0.5,   u*2-1 ,   v*2-1 ,   1);
-        FACE_LOOP(outDataSouth , 0.5,   u*2-1 , -(v*2-1),  -1);
-        FACE_LOOP(outDataWest  , 0.5,   u*2-1 ,    -1   , v*2-1);
-        FACE_LOOP(outDataLon0  , 0.5,     1   ,   u*2-1 , v*2-1);
-        FACE_LOOP(outDataEast  , 0.5, -(u*2-1),     1   , v*2-1);
-        FACE_LOOP(outDataLon180, 0.5,    -1   , -(u*2-1), v*2-1);
+        std::thread n([&]{ FACE_LOOP(outDataNorth , 0.5,   u*2-1 ,   v*2-1 ,   1  ); });
+        std::thread s([&]{ FACE_LOOP(outDataSouth , 0.5,   u*2-1 , -(v*2-1),  -1  ); });
+        std::thread w([&]{ FACE_LOOP(outDataWest  , 0.5,   u*2-1 ,    -1   , v*2-1); });
+        std::thread z([&]{ FACE_LOOP(outDataLon0  , 0.5,     1   ,   u*2-1 , v*2-1); });
+        std::thread e([&]{ FACE_LOOP(outDataEast  , 0.5, -(u*2-1),     1   , v*2-1); });
+        std::thread o([&]{ FACE_LOOP(outDataLon180, 0.5,    -1   , -(u*2-1), v*2-1); });
+        n.join();
+        s.join();
+        w.join();
+        z.join();
+        e.join();
+        o.join();
     }
 
     const QString faceTypes[]={"3-west", "0-lon0", "2-east", "1-lon180", "5-north","4-south"};

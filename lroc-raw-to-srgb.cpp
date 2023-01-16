@@ -8,7 +8,9 @@
 template<typename T> T step(T edge, T x) { return x<edge ? 0 : 1; }
 double sRGBTransferFunction(const double c)
 {
-    return step(0.0031308,c)*(1.055*std::pow(c, 1/2.4)-0.055)+step(-0.0031308,-c)*12.92*c;
+    const auto s = step(0.0031308,c);
+    return s  * (1.055*std::pow(c, 1/2.4)-0.055) +
+        (1-s) *  12.92*c;
 }
 
 int main(int argc, char** argv)

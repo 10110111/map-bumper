@@ -30,3 +30,6 @@ target_link_libraries(heightmap2horizonmap Qt6::Core Qt6::Gui)
 
 add_executable(lroc-raw-to-srgb lroc-raw-to-srgb.cpp)
 target_link_libraries(lroc-raw-to-srgb Qt6::Core Qt6::Gui)
+
+add_executable(cgi-moon-kit-color-to-srgb cgi-moon-kit-color-to-srgb.cpp)
+target_link_libraries(cgi-moon-kit-color-to-srgb Qt6::Core Qt6::Gui)

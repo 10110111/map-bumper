@@ -33,7 +33,7 @@ double sample(T const* data, const size_t width, const size_t height, const size
     const auto x = (longitude - firstLon) / deltaLon;
     const auto floorX = std::floor(x);
 
-    const auto deltaLat = -M_PI/height;
+    const auto deltaLat = -M_PI/(height-1);
     const auto firstLat = (1.-height)/2. * deltaLat;
 
     const auto y = (latitude - firstLat) / deltaLat;

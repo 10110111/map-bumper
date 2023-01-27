@@ -33,3 +33,7 @@ target_link_libraries(lroc-raw-to-srgb Qt6::Core Qt6::Gui)
 
 add_executable(cgi-moon-kit-color-to-srgb cgi-moon-kit-color-to-srgb.cpp)
 target_link_libraries(cgi-moon-kit-color-to-srgb Qt6::Core Qt6::Gui)
+
+add_executable(sldem-img2png sldem-img2png.cpp)
+target_link_libraries(sldem-img2png Qt6::Core Qt6::Gui)
+target_compile_options(sldem-img2png PRIVATE -fno-strict-aliasing)

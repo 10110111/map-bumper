@@ -73,20 +73,124 @@ double sample(std::ifstream& in, const off_t width, const off_t height, const of
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
 
+int usage(const char*const argv0, const int ret)
+{
+        std::cerr << "Usage: " << argv0 << 1+R"(
+ {-h outputMapHeight|-w outputMapWidth|-b backgroundAltitudeMap} -r referenceSphereRadiusInKM -k kmPerUnitValue -i inputFile.IMG -o outputFileName
+Options:
+ --help                 Show this help message and quit
+ -b,--background FILE   Background altitude map, a map that has full -90°..90° latitude span, in which the -60°..60° region is to be replaced by the data from input file
+ -h,--height NUM        Height of the output map (width is 2×this)
+ -w,--width NUM         Width of the output map (must be even; height is 0.5×this)
+ -r,--radius NUM        Radius of the reference sphere in km
+ -k,--km-per-unit NUM   Unit of altitude to use in the output
+ -i FILE                Input file from SLDEM2015, must be accompanied by the corresponding .LBL file
+ -o FILE                Output file to save the resulting map in
+)";
+    return ret;
+}
+
+
 int main(int argc, char** argv)
 try
 {
-    if(argc != 6)
+    double outputReferenceRadius = -1;
+    double outputKmPerUnit = -1;
+    off_t outputWidth = 0, outputHeight = 0;
+    QString inFileName;
+    QString outFileName;
+    QString bgMapFileName;
+
+    if(argc == 1)
+        return usage(argv[0],1);
+
+    for(int n = 1; n < argc; ++n)
     {
-        std::cerr << "Usage: " << argv[0] << " referenceSphereRadiusInKM kmPerUnitValue inputFile.IMG outputFileName outFileHeight\n";
+#define REQUIRE_PARAM() do{                                                 \
+            if(argc+1 == n)                                                 \
+            {                                                               \
+                std::cerr << "Option " << arg << " requires parameter\n";   \
+                return usage(argv[0], 1);                                   \
+            }}while(false)
+
+        const std::string arg = argv[n];
+        if(arg == "--help")
+        {
+            return usage(argv[0], 0);
+        }
+        else if(arg == "-b" || arg == "--background")
+        {
+            REQUIRE_PARAM();
+            bgMapFileName = argv[++n];
+        }
+        else if(arg == "-h" || arg == "--height")
+        {
+            REQUIRE_PARAM();
+            outputHeight = std::stoul(argv[++n]);
+        }
+        else if(arg == "-w" || arg == "--width")
+        {
+            REQUIRE_PARAM();
+            outputWidth = std::stoul(argv[++n]);
+        }
+        else if(arg == "-r" || arg == "--radius")
+        {
+            REQUIRE_PARAM();
+            outputReferenceRadius = std::stod(argv[++n]);
+        }
+        else if(arg == "-k" || arg == "--km-per-unit")
+        {
+            REQUIRE_PARAM();
+            outputKmPerUnit = std::stod(argv[++n]);
+        }
+        else if(arg == "-i")
+        {
+            REQUIRE_PARAM();
+            inFileName = argv[++n];
+        }
+        else if(arg == "-o")
+        {
+            REQUIRE_PARAM();
+            outFileName = argv[++n];
+        }
+        else
+        {
+            std::cerr << "Unknown option " << arg << "\n";
+            return usage(argv[0], 1);
+        }
+    }
+#undef REQUIRE_PARAM
+
+    if(outputWidth <= 0 && outputHeight <= 0 && bgMapFileName.isEmpty())
+    {
+        std::cerr << "Neither output width nor height, nor background altitude map were specified\n";
+        return usage(argv[0],1);
+    }
+    if(outputHeight > 0 && outputWidth > 0 && outputWidth != outputHeight*2)
+    {
+        std::cerr << "Width must be twice the height. If one is specified the other may be omitted.\n";
         return 1;
     }
-
-    const auto outputReferenceRadius = std::stod(argv[1]);
-    const auto outputKmPerUnit = std::stod(argv[2]);
-    const QString inFileName  = argv[3];
-    const char*const outFileName = argv[4];
-    const auto outputHeight = std::stoul(argv[5]);
+    if(outputWidth % 2)
+    {
+        std::cerr << "Width must be even\n";
+        return 1;
+    }
+    if(outputReferenceRadius <= 0)
+    {
+        std::cerr << "Reference radius was not specified\n";
+        return usage(argv[0],1);
+    }
+    if(outputKmPerUnit <= 0)
+    {
+        std::cerr << "Altitude unit was not specified\n";
+        return usage(argv[0],1);
+    }
+    if(inFileName.isEmpty() || outFileName.isEmpty())
+    {
+        std::cerr << (inFileName.isEmpty() ? "Input" : "Output") << " file was not specified\n";
+        return usage(argv[0],1);
+    }
 
     if(!inFileName.toUpper().endsWith(".IMG"))
     {
@@ -131,9 +235,39 @@ try
     }
     in.exceptions(std::ios_base::badbit|std::ios_base::failbit);
 
-    const auto outputWidth = 2*outputHeight;
-    QImage output(outputWidth, outputHeight, QImage::Format_Grayscale16);
-    output.fill(QColor(0,0,0));
+    QImage output;
+    if(bgMapFileName.isEmpty())
+    {
+        if(outputWidth <= 0)
+            outputWidth = outputHeight * 2;
+        if(outputHeight <= 0)
+            outputHeight = outputWidth / 2;
+
+        output = QImage(outputWidth, outputHeight, QImage::Format_Grayscale16);
+        output.fill(QColor(0,0,0));
+    }
+    else
+    {
+        output = QImage(bgMapFileName).convertToFormat(QImage::Format_Grayscale16);
+        if(output.isNull())
+        {
+            std::cerr << "Failed to load background altitude map\n";
+            return 1;
+        }
+        if(outputWidth && outputWidth != output.width())
+        {
+            std::cerr << "Output width doesn't match background altitude map width\n";
+            return 1;
+        }
+        if(outputHeight && outputHeight != output.height())
+        {
+            std::cerr << "Output height doesn't match background altitude map height\n";
+            return 1;
+        }
+        // For the case they were not specified
+        outputWidth = output.width();
+        outputHeight = output.height();
+    }
     const auto outData = reinterpret_cast<uint16_t*>(output.bits());
 
     const auto outputRowStride = output.bytesPerLine() / sizeof outData[0];

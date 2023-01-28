@@ -1,12 +1,11 @@
 #include <cmath>
-#include <chrono>
 #include <random>
+#include <thread>
 #include <iostream>
 #include <algorithm>
-
 #include <glm/glm.hpp>
-
 #include <QImage>
+#include "timing.hpp"
 
 template<typename T> auto sqr(T const& x) { return x*x; }
 
@@ -100,80 +99,103 @@ try
 
     const size_t outBytesPerPixel = 4;
     std::vector<double> outData(outputWidth*outputHeight*outBytesPerPixel);
-    auto time0 = std::chrono::steady_clock::now();
-    for(size_t i = 0; i < outputWidth; ++i)
+    std::atomic<unsigned> rowsDone{0};
+    auto work = [inputWidth,inputHeight,outputWidth,outputHeight,
+                 sphereRadius,kmPerUnit,rowStride,maxRadiusSquared,
+                 data,outData=outData.data(),&rowsDone](const size_t jMin, const size_t jMax)
     {
-        const auto u = (0.5 + i) / outputWidth;
-        for(size_t j = 0; j < outputHeight; ++j)
+        auto time0 = std::chrono::steady_clock::now();
+        size_t rowsDoneInThisThreadAfterLastUpdate = 0;
+        for(size_t j = jMin; j < jMax; ++j, ++rowsDoneInThisThreadAfterLastUpdate)
         {
             const auto v = (0.5+(outputHeight - 1 - j)) / outputHeight;
-            const auto pixelPosInData = (i + j*outputWidth)*outBytesPerPixel;
-
-            using namespace glm;
-            using namespace std;
-
-            const double raySourceLon = (2*u-1)*M_PI;
-            const double raySourceLat  = (2*v-1)*(M_PI/2);
-
-            const double deltaLon = (2*M_PI/inputWidth) / cos(raySourceLat);
-            const double eastLon = raySourceLon + deltaLon;
-            const double eastLat = raySourceLat;
-
-            const auto deltaLat = M_PI/inputHeight;
-            const double northLat = raySourceLat + deltaLat;
-            const double northLon = raySourceLon;
-
-            const double raySourceHeight = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, raySourceLon, raySourceLat);
-            const double raySourceRadius = sphereRadius + raySourceHeight;
-
-            const double eastHeight = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, eastLon, eastLat);
-            const double eastRadius = sphereRadius + eastHeight;
-
-            const double northHeight = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, northLon, northLat);
-            const double northRadius = sphereRadius + northHeight;
-
-            const dvec3 zenithAtRaySource= dvec3(cos(raySourceLon) * cos(raySourceLat),
-                                                 sin(raySourceLon) * cos(raySourceLat),
-                                                 sin(raySourceLat));
-            const dvec3 raySourcePoint = raySourceRadius * zenithAtRaySource;
-
-            const dvec3 eastPoint = eastRadius * dvec3(cos(eastLon) * cos(eastLat),
-                                                       sin(eastLon) * cos(eastLat),
-                                                       sin(eastLat));
-            const dvec3 northPoint = northRadius * dvec3(cos(northLon) * cos(northLat),
-                                                         sin(northLon) * cos(northLat),
-                                                         sin(northLat));
-            const dvec3 deltaEast = eastPoint - raySourcePoint;
-            const dvec3 deltaNorth = northPoint - raySourcePoint;
-
-            unsigned rayIndex = 0;
-            for(const dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
+            for(size_t i = 0; i < outputWidth; ++i)
             {
-                double sinHorizonElevation = -M_PI/2;
-                for(dvec3 rayPoint = raySourcePoint + rayDir; dot(rayPoint, rayPoint) <= maxRadiusSquared; rayPoint += rayDir)
+                const auto u = (0.5 + i) / outputWidth;
+                const auto pixelPosInData = (i + j*outputWidth)*outBytesPerPixel;
+
+                using namespace glm;
+                using namespace std;
+
+                const double raySourceLon = (2*u-1)*M_PI;
+                const double raySourceLat  = (2*v-1)*(M_PI/2);
+
+                const double deltaLon = (2*M_PI/inputWidth) / cos(raySourceLat);
+                const double eastLon = raySourceLon + deltaLon;
+                const double eastLat = raySourceLat;
+
+                const auto deltaLat = M_PI/inputHeight;
+                const double northLat = raySourceLat + deltaLat;
+                const double northLon = raySourceLon;
+
+                const double raySourceHeight = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, raySourceLon, raySourceLat);
+                const double raySourceRadius = sphereRadius + raySourceHeight;
+
+                const double eastHeight = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, eastLon, eastLat);
+                const double eastRadius = sphereRadius + eastHeight;
+
+                const double northHeight = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, northLon, northLat);
+                const double northRadius = sphereRadius + northHeight;
+
+                const dvec3 zenithAtRaySource= dvec3(cos(raySourceLon) * cos(raySourceLat),
+                                                     sin(raySourceLon) * cos(raySourceLat),
+                                                     sin(raySourceLat));
+                const dvec3 raySourcePoint = raySourceRadius * zenithAtRaySource;
+
+                const dvec3 eastPoint = eastRadius * dvec3(cos(eastLon) * cos(eastLat),
+                                                           sin(eastLon) * cos(eastLat),
+                                                           sin(eastLat));
+                const dvec3 northPoint = northRadius * dvec3(cos(northLon) * cos(northLat),
+                                                             sin(northLon) * cos(northLat),
+                                                             sin(northLat));
+                const dvec3 deltaEast = eastPoint - raySourcePoint;
+                const dvec3 deltaNorth = northPoint - raySourcePoint;
+
+                unsigned rayIndex = 0;
+                for(const dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
                 {
-                    const dvec3 zenithAtRayPoint = normalize(rayPoint);
+                    double sinHorizonElevation = -M_PI/2;
+                    for(dvec3 rayPoint = raySourcePoint + rayDir; dot(rayPoint, rayPoint) <= maxRadiusSquared; rayPoint += rayDir)
+                    {
+                        const dvec3 zenithAtRayPoint = normalize(rayPoint);
 
-                    const double longitude = atan2(rayPoint.y, rayPoint.x);
-                    const double latitude = asin(zenithAtRayPoint.z);
-                    const double altitude = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, longitude, latitude);
+                        const double longitude = atan2(rayPoint.y, rayPoint.x);
+                        const double latitude = asin(zenithAtRayPoint.z);
+                        const double altitude = kmPerUnit*sample(data, inputWidth, inputHeight, rowStride, longitude, latitude);
 
-                    const dvec3 pointAtAlt = zenithAtRayPoint*(sphereRadius+altitude);
-                    const double sinElev = dot(normalize(pointAtAlt-raySourcePoint), zenithAtRaySource); 
-                    if(sinElev > sinHorizonElevation)
-                        sinHorizonElevation = sinElev;
+                        const dvec3 pointAtAlt = zenithAtRayPoint*(sphereRadius+altitude);
+                        const double sinElev = dot(normalize(pointAtAlt-raySourcePoint), zenithAtRaySource); 
+                        if(sinElev > sinHorizonElevation)
+                            sinHorizonElevation = sinElev;
+                    }
+                    outData[pixelPosInData + rayIndex] = (sign(sinHorizonElevation)*sqrt(abs(sinHorizonElevation)))/2+0.5;
+                    ++rayIndex;
                 }
-                outData[pixelPosInData + rayIndex] = (sign(sinHorizonElevation)*sqrt(abs(sinHorizonElevation)))/2+0.5;
-                ++rayIndex;
+            }
+            auto time1 = std::chrono::steady_clock::now();
+            if(time1 - time0 > std::chrono::seconds(5))
+            {
+                rowsDone += rowsDoneInThisThreadAfterLastUpdate;
+                rowsDoneInThisThreadAfterLastUpdate = 0;
+                std::cerr << std::round(rowsDone * 10000. / outputHeight)/100. << "% done\n";
+                time0 = time1;
             }
         }
-        auto time1 = std::chrono::steady_clock::now();
-        if(time1 - time0 > std::chrono::seconds(5))
-        {
-            std::cerr << std::round((i+1) * 10000. / outputWidth)/100. << "% done\n";
-            time0 = time1;
-        }
+    };
+
+    auto time0 = std::chrono::steady_clock::now();
+    const auto numThreads = std::max(1u, std::thread::hardware_concurrency());
+    std::vector<std::thread> threads;
+    for(size_t n = 0; n < numThreads; ++n)
+    {
+        const size_t jMin = outputHeight / numThreads * n;
+        const size_t jMax = n+1 < numThreads ? outputHeight / numThreads * (n+1) : outputHeight;
+        threads.emplace_back(work, jMin, jMax);
     }
+    for(auto& thread : threads)
+        thread.join();
+    auto time1 = std::chrono::steady_clock::now();
+    std::cerr << "100% done in " << formatDeltaTime(time0, time1) << "\n";
 
     using OutType = uchar;
     std::vector<OutType> outBits;

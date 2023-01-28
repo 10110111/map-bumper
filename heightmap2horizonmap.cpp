@@ -106,7 +106,7 @@ try
     {
         auto time0 = std::chrono::steady_clock::now();
         size_t rowsDoneInThisThreadAfterLastUpdate = 0;
-        for(size_t j = jMin; j < jMax; ++j, ++rowsDoneInThisThreadAfterLastUpdate)
+        for(size_t j = jMin; j < jMax; ++j)
         {
             const auto v = (0.5+(outputHeight - 1 - j)) / outputHeight;
             for(size_t i = 0; i < outputWidth; ++i)
@@ -172,6 +172,8 @@ try
                     ++rayIndex;
                 }
             }
+
+            ++rowsDoneInThisThreadAfterLastUpdate;
             auto time1 = std::chrono::steady_clock::now();
             if(time1 - time0 > std::chrono::seconds(5))
             {

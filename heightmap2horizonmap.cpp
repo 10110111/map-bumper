@@ -1,6 +1,7 @@
 #include <cmath>
 #include <random>
 #include <thread>
+#include <stdlib.h>
 #include <iostream>
 #include <algorithm>
 #include <glm/glm.hpp>
@@ -55,6 +56,9 @@ double sample(T const* data, const size_t width, const size_t height, const size
 int main(int argc, char** argv)
 try
 {
+    // Override the default limit of 128MiB, but let the user override our choice too
+    setenv("QT_IMAGEIO_MAXALLOC","4096",false);
+
     if(argc != 6 && argc != 7)
     {
         std::cerr << "Usage: " << argv[0] << " sphereRadiusInKM kmPerUnitValue inputFile outputFileName outputHeightInPixels\n";

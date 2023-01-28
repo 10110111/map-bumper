@@ -2,6 +2,7 @@
 #include <random>
 #include <atomic>
 #include <thread>
+#include <stdlib.h>
 #include <iostream>
 #include <algorithm>
 #include <glm/glm.hpp>
@@ -62,6 +63,9 @@ double normalizeLon(double lon)
 int main(int argc, char** argv)
 try
 {
+    // Override the default limit of 128MiB, but let the user override our choice too
+    setenv("QT_IMAGEIO_MAXALLOC","4096",false);
+
     if(argc != 6 && argc != 7)
     {
         std::cerr << "Usage: " << argv[0] << " sphereRadiusInKM kmPerUnitValue inputFile outputFileName normalMapHeightInPixels [supersamplingLevel]\n";

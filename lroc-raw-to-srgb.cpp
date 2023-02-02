@@ -81,15 +81,15 @@ try
         }
     }
 
-    // These values were computed from CIE 1931 functions using triangular
-    // indicator functions (result should be equivalent to using linearly
-    // interpolated spectra).
-    constexpr double rgbsPerWL[][3] = {{ 0.0859932073132241,-0.0742345015484867 , 0.522206963569252 },
-                                       {-9.8696160185158   , 14.3897262411038   , 81.0646570472351  },
-                                       { 3.56460501999052  , 84.6557094421366   , 18.5537216323101  },
-                                       { 83.5638258393946  , 6.38930071626876   ,-2.47243752916485  },
-                                       { 45.0832972872074  ,-3.37526405235609   ,-0.491743508354297 },
-                                       { 5.39818758379944  ,-0.559432795037625  ,-0.0396279820939476}};
+    // These values were computed from CIE 1931 functions using triangular indicator functions
+    // multiplied with solar irradiance at near-Earth orbit (result should be equivalent to using
+    // linearly interpolated spectra of lunar albedo).
+    constexpr double rgbsPerWL[][3] = {{0.123544388739659, -0.106861878682004, 0.752259001205208 },
+                                       {-19.8366079265001,  27.8275045114262,  151.197577413019  },
+                                       { 4.43497668468578,  157.373608612933,  37.079183527029   },
+                                       { 145.775550325006,  11.7192895881426, -4.38388154872636  },
+                                       { 73.8247972448887, -5.47353897213371, -0.811862808601448 },
+                                       { 8.24022224911719, -0.85351964335178, -0.0605466729302762}};
 
     static_assert(std::size(rgbsPerWL) == numWLs);
     std::vector<double> out(rowStride*height*3);

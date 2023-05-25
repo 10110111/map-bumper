@@ -126,7 +126,8 @@ try
     }
 
     const size_t outBytesPerPixel = 3;
-    std::vector<double> outData(normalMapWidth*normalMapHeight*outBytesPerPixel);
+    using OutType = uchar;
+    std::vector<OutType> outData(normalMapWidth*normalMapHeight*outBytesPerPixel);
     std::atomic<unsigned> rowsDone{0};
     auto work = [inData, outData=outData.data(), numSamples, outBytesPerPixel,
                  normalMapWidth, normalMapHeight, width, height, rowStride,
@@ -209,9 +210,10 @@ try
                 const double normalB = dot(normal, axis2);
                 const double normalC = dot(normal, axis3);
 
-                outData[pixelPosInData + 0] = normalA+0.5;
-                outData[pixelPosInData + 1] = normalB+0.5;
-                outData[pixelPosInData + 2] = normalC;
+                constexpr auto max = std::numeric_limits<OutType>::max();
+                outData[pixelPosInData + 0] = std::clamp(normalA+0.5,0.,1.) * max;
+                outData[pixelPosInData + 1] = std::clamp(normalB+0.5,0.,1.) * max;
+                outData[pixelPosInData + 2] = std::clamp(normalC    ,0.,1.) * max;
             }
 
             ++rowsDoneInThisThreadAfterLastUpdate;
@@ -240,14 +242,9 @@ try
     auto time1 = std::chrono::steady_clock::now();
     std::cerr << "100% done in " << formatDeltaTime(time0, time1) << "\n";
 
-    using OutType = uchar;
-    std::vector<OutType> outBits;
-    outBits.reserve(outData.size());
-    for(auto v : outData)
-        outBits.push_back(std::clamp(v,0.,1.)*std::numeric_limits<OutType>::max());
-
     std::cerr << "Saving image to " << outFileName << "... ";
-    const QImage out(outBits.data(), normalMapWidth, normalMapHeight, normalMapWidth*outBytesPerPixel, QImage::Format_RGB888);
+    const QImage out(outData.data(), normalMapWidth, normalMapHeight,
+                     normalMapWidth*outBytesPerPixel, QImage::Format_RGB888);
     if(!out.save(outFileName))
     {
         std::cerr << "Failed to save output file " << outFileName << "\n";

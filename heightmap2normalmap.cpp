@@ -129,13 +129,16 @@ try
     using OutType = uchar;
     std::vector<OutType> outData(normalMapWidth*normalMapHeight*outBytesPerPixel);
     std::atomic<unsigned> rowsDone{0};
+    const auto startTime = std::chrono::steady_clock::now();
+    std::atomic_int numThreadsReportedFirstProgress{0};
     auto work = [inData, outData=outData.data(), numSamples, outBytesPerPixel,
                  normalMapWidth, normalMapHeight, width, height, rowStride,
-                 kmPerUnit, sphereRadius,
+                 kmPerUnit, sphereRadius, startTime,
                  &samplesCenter=std::as_const(samplesCenter),
                  &samplesEast=std::as_const(samplesEast),
                  &samplesNorth=std::as_const(samplesNorth),
-                 &rowsDone](const size_t jMin, const size_t jMax)
+                 &rowsDone, &numThreadsReportedFirstProgress]
+                 (const size_t jMin, const size_t jMax)
     {
         auto time0 = std::chrono::steady_clock::now();
         size_t rowsDoneInThisThreadAfterLastUpdate = 0;
@@ -217,12 +220,50 @@ try
             }
 
             ++rowsDoneInThisThreadAfterLastUpdate;
-            auto time1 = std::chrono::steady_clock::now();
-            if(time1 - time0 > std::chrono::seconds(5))
+            using namespace std::chrono;
+            auto time1 = steady_clock::now();
+            if(time1 - time0 > seconds(5))
             {
+                // ETA is reported only by the first thread in the iteration.
+                // This seems to provide the most accurate estimate. Once the
+                // reporting thread is determined, it will report after each
+                // iteration.
+                thread_local bool isTimeReportingThread = false;
+                thread_local bool reportedProgressFirstTime = false;
+                if(!reportedProgressFirstTime)
+                {
+                    if(numThreadsReportedFirstProgress.fetch_add(1) == 0)
+                        isTimeReportingThread = true;
+                }
+
                 rowsDone += rowsDoneInThisThreadAfterLastUpdate;
                 rowsDoneInThisThreadAfterLastUpdate = 0;
-                std::cerr << std::round(rowsDone * 10000. / normalMapHeight)/100. << "% done\n";
+                const auto progress = std::round(rowsDone * 10000. / normalMapHeight)/10000.;
+                const auto usecElapsed = duration_cast<microseconds>(time1 - startTime).count();
+                const long secToEnd = std::lround((1. - progress) / progress * usecElapsed * 1e-6);
+                std::ostringstream ss;
+                ss << progress*100 << "% done";
+                // First ETA estimate is too far from reality, likely due
+                // to overhead of thread startup, so skip first measurement.
+                if(isTimeReportingThread && reportedProgressFirstTime)
+                {
+                    if(secToEnd > 60)
+                    {
+                        const auto min = secToEnd/60;
+                        const auto sec = secToEnd - min*60;
+                        ss << ", ETA: " << min << 'm' << sec << "s\n";
+                    }
+                    else
+                    {
+                        ss << ", ETA: " << secToEnd << "s\n";
+                    }
+                }
+                else
+                {
+                    ss << '\n';
+                }
+                reportedProgressFirstTime = true;
+                std::cerr << ss.str();
                 time0 = time1;
             }
         }

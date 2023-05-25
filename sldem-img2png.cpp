@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdlib.h>
 #include <fstream>
 #include <QRegularExpression>
 #include <QString>
@@ -94,6 +95,9 @@ Options:
 int main(int argc, char** argv)
 try
 {
+    // Override the default limit of 128MiB, but let the user override our choice too
+    setenv("QT_IMAGEIO_MAXALLOC","4096",false);
+
     double outputReferenceRadius = -1;
     double outputKmPerUnit = -1;
     off_t outputWidth = 0, outputHeight = 0;

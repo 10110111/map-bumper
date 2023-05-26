@@ -66,9 +66,11 @@ try
     // Override the default limit of 128MiB, but let the user override our choice too
     setenv("QT_IMAGEIO_MAXALLOC","4096",false);
 
-    if(argc != 6 && argc != 7)
+    if(argc < 6 || argc > 8)
     {
-        std::cerr << "Usage: " << argv[0] << " sphereRadiusInKM kmPerUnitValue inputFile outputFileName normalMapHeightInPixels [supersamplingLevel]\n";
+        std::cerr << "Usage: " << argv[0] << " sphereRadiusInKM kmPerUnitValue inputFile outputFileName normalMapHeightInPixels [supersamplingLevel] [--full-range]\n";
+        std::cerr << "Options:\n"
+                     " --full-range     Convert each component of the normal from [-1,1] to [0,1] range\n";
         return 1;
     }
 
@@ -81,6 +83,19 @@ try
     const auto normalMapWidth = 2*normalMapHeight;
 
     const unsigned numSamples = argc<7 ? 1 : std::max(1ul, std::stoul(argv[6]));
+    bool fullComponentsRange = false;
+    if(argc >= 8)
+    {
+        if(!strcmp(argv[7], "--full-range"))
+        {
+            fullComponentsRange = true;
+        }
+        else
+        {
+            std::cerr << "Unknown parameter " << argv[7] << "\n";
+            return 1;
+        }
+    }
 
     QImage in(inFileName);
     if(in.isNull())
@@ -133,7 +148,7 @@ try
     std::atomic_int numThreadsReportedFirstProgress{0};
     auto work = [inData, outData=outData.data(), numSamples, outBytesPerPixel,
                  normalMapWidth, normalMapHeight, width, height, rowStride,
-                 kmPerUnit, sphereRadius, startTime,
+                 fullComponentsRange, kmPerUnit, sphereRadius, startTime,
                  &samplesCenter=std::as_const(samplesCenter),
                  &samplesEast=std::as_const(samplesEast),
                  &samplesNorth=std::as_const(samplesNorth),
@@ -214,9 +229,18 @@ try
                 const double normalC = dot(normal, axis3);
 
                 constexpr auto max = std::numeric_limits<OutType>::max();
-                outData[pixelPosInData + 0] = std::clamp(normalA+0.5,0.,1.) * max;
-                outData[pixelPosInData + 1] = std::clamp(normalB+0.5,0.,1.) * max;
-                outData[pixelPosInData + 2] = std::clamp(normalC    ,0.,1.) * max;
+                if(fullComponentsRange)
+                {
+                    outData[pixelPosInData + 0] = std::clamp(normalA/2+0.5, 0.,1.) * max;
+                    outData[pixelPosInData + 1] = std::clamp(normalB/2+0.5, 0.,1.) * max;
+                    outData[pixelPosInData + 2] = std::clamp(normalC/2+0.5, 0.,1.) * max;
+                }
+                else
+                {
+                    outData[pixelPosInData + 0] = std::clamp(normalA+0.5,0.,1.) * max;
+                    outData[pixelPosInData + 1] = std::clamp(normalB+0.5,0.,1.) * max;
+                    outData[pixelPosInData + 2] = std::clamp(normalC    ,0.,1.) * max;
+                }
             }
 
             ++rowsDoneInThisThreadAfterLastUpdate;

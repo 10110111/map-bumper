@@ -102,7 +102,8 @@ try
     const auto maxRadiusSquared = sqr(sphereRadius+maxAltitude);
 
     const size_t outBytesPerPixel = 4;
-    std::vector<double> outData(outputWidth*outputHeight*outBytesPerPixel);
+    using OutType = uchar;
+    std::vector<OutType> outData(outputWidth*outputHeight*outBytesPerPixel);
     std::atomic<unsigned> rowsDone{0};
     auto work = [inputWidth,inputHeight,outputWidth,outputHeight,
                  sphereRadius,kmPerUnit,rowStride,maxRadiusSquared,
@@ -172,7 +173,9 @@ try
                         if(sinElev > sinHorizonElevation)
                             sinHorizonElevation = sinElev;
                     }
-                    outData[pixelPosInData + rayIndex] = (sign(sinHorizonElevation)*sqrt(abs(sinHorizonElevation)))/2+0.5;
+                    const double v = (sign(sinHorizonElevation)*sqrt(abs(sinHorizonElevation)))/2+0.5;
+                    constexpr auto max = std::numeric_limits<OutType>::max();
+                    outData[pixelPosInData + rayIndex] = std::clamp(v,0.,1.)*max;
                     ++rayIndex;
                 }
             }
@@ -203,13 +206,7 @@ try
     auto time1 = std::chrono::steady_clock::now();
     std::cerr << "100% done in " << formatDeltaTime(time0, time1) << "\n";
 
-    using OutType = uchar;
-    std::vector<OutType> outBits;
-    outBits.reserve(outData.size());
-    for(auto v : outData)
-        outBits.push_back(std::clamp(v,0.,1.)*std::numeric_limits<OutType>::max());
-
-    const QImage out(outBits.data(), outputWidth, outputHeight, outputWidth*outBytesPerPixel, QImage::Format_RGBA8888);
+    const QImage out(outData.data(), outputWidth, outputHeight, outputWidth*outBytesPerPixel, QImage::Format_RGBA8888);
     if(!out.save(outFileName))
     {
         std::cerr << "Failed to save output file " << outFileName << "\n";

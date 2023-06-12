@@ -123,9 +123,11 @@ try
 
     std::vector<glm::dvec2> samplesCenter(numSamples);
     std::vector<glm::dvec2> samplesEast  (numSamples);
+    std::vector<glm::dvec2> samplesWest  (numSamples);
     std::vector<glm::dvec2> samplesNorth (numSamples);
+    std::vector<glm::dvec2> samplesSouth (numSamples);
     if(numSamples<=1)
-        samplesCenter = samplesEast = samplesNorth = {glm::dvec2(0,0)};
+        samplesCenter = samplesEast = samplesNorth = samplesWest = samplesSouth = {glm::dvec2(0,0)};
     else
     {
         std::mt19937 mt(std::random_device{}());
@@ -136,7 +138,11 @@ try
             sample = glm::dvec2(rng(), rng());
         for(auto& sample : samplesEast)
             sample = glm::dvec2(rng(), rng());
+        for(auto& sample : samplesWest)
+            sample = glm::dvec2(rng(), rng());
         for(auto& sample : samplesNorth)
+            sample = glm::dvec2(rng(), rng());
+        for(auto& sample : samplesSouth)
             sample = glm::dvec2(rng(), rng());
     }
 
@@ -151,7 +157,9 @@ try
                  fullComponentsRange, kmPerUnit, sphereRadius, startTime,
                  &samplesCenter=std::as_const(samplesCenter),
                  &samplesEast=std::as_const(samplesEast),
+                 &samplesWest=std::as_const(samplesWest),
                  &samplesNorth=std::as_const(samplesNorth),
+                 &samplesSouth=std::as_const(samplesSouth),
                  &rowsDone, &numThreadsReportedFirstProgress]
                  (const size_t jMin, const size_t jMax)
     {
@@ -168,9 +176,10 @@ try
                 using namespace glm;
                 using namespace std;
 
-                double centerRadius = 0;
                 double eastRadius = 0;
+                double westRadius = 0;
                 double northRadius = 0;
+                double southRadius = 0;
 
                 const double centerLon = (2*u-1)*M_PI;
                 const double centerLat  = (2*v-1)*(M_PI/2);
@@ -178,45 +187,60 @@ try
                 const double deltaLon = (2*M_PI/normalMapWidth) / cos(centerLat);
                 const double eastLon = centerLon + deltaLon;
                 const double eastLat = centerLat;
+                const double westLon = centerLon - deltaLon;
+                const double westLat = centerLat;
 
                 const auto deltaLat = M_PI/normalMapHeight;
                 const double northLat = centerLat + deltaLat;
                 const double northLon = centerLon;
+                const double southLat = centerLat - deltaLat;
+                const double southLon = centerLon;
 
                 for(unsigned sampleN = 0; sampleN < numSamples; ++sampleN)
                 {
-                    const double centerHeight = kmPerUnit*sample(inData, width, height, rowStride,
-                                                                 normalizeLon(centerLon + samplesCenter[sampleN].x*deltaLon),
-                                                                 centerLat + samplesCenter[sampleN].y*deltaLat);
-                    centerRadius += sphereRadius + centerHeight;
-
                     const double eastHeight = kmPerUnit*sample(inData, width, height, rowStride,
                                                                normalizeLon(eastLon + samplesEast[sampleN].x*deltaLon),
                                                                eastLat + samplesEast[sampleN].y*deltaLat);
                     eastRadius += sphereRadius + eastHeight;
 
+                    const double westHeight = kmPerUnit*sample(inData, width, height, rowStride,
+                                                               normalizeLon(westLon + samplesWest[sampleN].x*deltaLon),
+                                                               westLat + samplesWest[sampleN].y*deltaLat);
+                    westRadius += sphereRadius + westHeight;
+
                     const double northHeight = kmPerUnit*sample(inData, width, height, rowStride,
                                                                 normalizeLon(northLon + samplesNorth[sampleN].x*deltaLon),
                                                                 northLat + samplesNorth[sampleN].y*deltaLat);
                     northRadius += sphereRadius + northHeight;
+
+                    const double southHeight = kmPerUnit*sample(inData, width, height, rowStride,
+                                                                normalizeLon(southLon + samplesSouth[sampleN].x*deltaLon),
+                                                                southLat + samplesSouth[sampleN].y*deltaLat);
+                    southRadius += sphereRadius + southHeight;
                 }
-                centerRadius /= numSamples;
                 eastRadius   /= numSamples;
+                westRadius   /= numSamples;
                 northRadius  /= numSamples;
+                southRadius  /= numSamples;
 
                 const dvec3 centerDir = dvec3(cos(centerLon) * cos(centerLat),
                                               sin(centerLon) * cos(centerLat),
                                               sin(centerLat));
-                const dvec3 centerPoint = centerRadius * centerDir;
 
                 const dvec3 eastPoint = eastRadius * dvec3(cos(eastLon) * cos(eastLat),
                                                            sin(eastLon) * cos(eastLat),
                                                            sin(eastLat));
+                const dvec3 westPoint = westRadius * dvec3(cos(westLon) * cos(westLat),
+                                                           sin(westLon) * cos(westLat),
+                                                           sin(westLat));
                 const dvec3 northPoint = northRadius * dvec3(cos(northLon) * cos(northLat),
                                                              sin(northLon) * cos(northLat),
                                                              sin(northLat));
-                const dvec3 deltaEast = eastPoint - centerPoint;
-                const dvec3 deltaNorth = northPoint - centerPoint;
+                const dvec3 southPoint = southRadius * dvec3(cos(southLon) * cos(southLat),
+                                                             sin(southLon) * cos(southLat),
+                                                             sin(southLat));
+                const dvec3 deltaEast = eastPoint - westPoint;
+                const dvec3 deltaNorth = northPoint - southPoint;
 
                 const dvec3 normal = normalize(cross(deltaEast, deltaNorth));
 

@@ -210,6 +210,9 @@ int usage(const char*const argv0, const int ret)
 int main(int argc, char** argv)
 try
 {
+    // Override the default limit of 128MiB, but let the user override our choice too
+    setenv("QT_IMAGEIO_MAXALLOC","4096",false);
+
     std::string inFileNameFineVertices;
     std::string inFileNameFineIndices;
     std::string inFileNameCoarseVertices;

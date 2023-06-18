@@ -152,7 +152,7 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
 
 #define RECT_GRID 1
 #define ISOS_TRIANG_GRID 2
-#define GRID_CHOICE ISOS_TRIANG_GRID
+#define GRID_CHOICE RECT_GRID
     const double z = 1;
     for(double j = 0; j <= numQuadsPerCellLength; ++j)
     {
@@ -300,7 +300,7 @@ try
     const auto t1 = steady_clock::now();
     std::cerr << "Loaded in " << toSeconds(t1-t0) << " s\n";
 
-    auto mesh = createCell(8, 21, 1000, Direction::X);
+    auto mesh = createCell(4, 11, 2000, Direction::X);
 
     if(!outBinFileName.empty())
     {

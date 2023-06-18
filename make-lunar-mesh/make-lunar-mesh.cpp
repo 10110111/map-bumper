@@ -81,22 +81,75 @@ double sample(T const* data, const size_t width, const size_t height, const size
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
 
-void applyHeightMap(std::vector<ch_vertex>& vertices)
+ch_vertex applyHeightMap(ch_vertex const& v)
 {
-    for(auto& v : vertices)
+    const auto r0 = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+    const auto longitude = std::atan2(v.x, -v.y); // basically the same as atan(y,x)+90°, but in [-PI,PI]
+    const auto latitude = std::acos(-v.z/r0) - 0.5*M_PI;
+    const auto altitudeKm = moonHeightMapKmPerUnit*sample(moonHeightMapBits,
+                                                          moonHeightMapWidth, moonHeightMapHeight,
+                                                          moonHeightMapRowStride, longitude, latitude);
+    const auto radius = (moonHeightMapBaseRadiusKm+altitudeKm)/AU;
+    const auto scale = radius / r0;
+    return {v.x * scale,
+            v.y * scale,
+            v.z * scale};
+}
+
+struct Mesh
+{
+    std::vector<ch_vertex> vertices;
+    std::vector<int> indices;
+};
+
+// The whole sphere is split into 6 sides corresponding to a circumscribed cube
+// onto which the vertices are projected from the center. Each side is split to
+// an N×N grid of cells.
+// This function creates the specified single cell from the upper (z=1) side of
+// the cube.
+Mesh createCell(const int numCellsPerCubeSide, const int cellIndex, const int numQuadsPerCellLength)
+{
+    Mesh mesh;
+
+    const double cellI = cellIndex % numCellsPerCubeSide;
+    const double cellJ = cellIndex / numCellsPerCubeSide;
+    const double cellX = 2. * cellI / numCellsPerCubeSide - 1;
+    const double cellY = 2. * cellJ / numCellsPerCubeSide - 1;
+
+    const double numQuadsPerSide = numQuadsPerCellLength * numCellsPerCubeSide;
+
+    const double z = 1;
+    for(double j = 0; j <= numQuadsPerCellLength; ++j)
     {
-        const auto r0 = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
-        const auto longitude = std::atan2(v.x, -v.y); // basically the same as atan(y,x)+90°, but in [-PI,PI]
-        const auto latitude = std::acos(-v.z/r0) - 0.5*M_PI;
-        const auto altitudeKm = moonHeightMapKmPerUnit*sample(moonHeightMapBits,
-                                                              moonHeightMapWidth, moonHeightMapHeight,
-                                                              moonHeightMapRowStride, longitude, latitude);
-        const auto radius = (moonHeightMapBaseRadiusKm+altitudeKm)/AU;
-        const auto scale = radius / r0;
-        v.x *= scale;
-        v.y *= scale;
-        v.z *= scale;
+        const double y = cellY + 2 * j / numQuadsPerSide;
+        for(double i = 0; i <= numQuadsPerCellLength; ++i)
+        {
+            const double x = cellX + 2 * i / numQuadsPerSide;
+
+            // Apply equi-angular cubemap transformation
+            const double eaX = std::tan(M_PI/4 * x);
+            const double eaY = std::tan(M_PI/4 * y);
+
+            const auto v = applyHeightMap({eaX,eaY,z});
+            mesh.vertices.push_back(v);
+        }
     }
+
+    const int lineSize = numQuadsPerCellLength + 1;
+    for(int j = 0; j < numQuadsPerCellLength; ++j)
+    {
+        for(int i = 0; i < numQuadsPerCellLength; ++i)
+        {
+            mesh.indices.push_back( j    * lineSize + i  );
+            mesh.indices.push_back( j    * lineSize + i+1);
+            mesh.indices.push_back((j+1) * lineSize + i  );
+            mesh.indices.push_back((j+1) * lineSize + i  );
+            mesh.indices.push_back( j    * lineSize + i+1);
+            mesh.indices.push_back((j+1) * lineSize + i+1);
+        }
+    }
+
+    return mesh;
 }
 
 template<typename Rep, typename Per>
@@ -106,78 +159,12 @@ double toSeconds(const std::chrono::duration<Rep,Per> d)
     return duration_cast<microseconds>(d).count() * 1e-6;
 }
 
-std::vector<ch_vertex> combine(std::vector<ch_vertex> const& verticesCoarse,
-                               std::vector<ch_vertex> const& verticesFine)
-{
-    std::vector<ch_vertex> vertices;
-    vertices.reserve(verticesFine.size()); // This is an upper limit on the size
-
-    const double fineYmax = std::sin(10*M_PI/180);
-    const double fineYmin = -fineYmax;
-
-    for(const auto& v : verticesCoarse)
-        if(v.y > fineYmax)
-            vertices.push_back(v);
-
-    for(const auto& v : verticesFine)
-        if(fineYmin <= v.y && v.y <= fineYmax)
-            vertices.push_back(v);
-
-    for(const auto& v : verticesCoarse)
-        if(v.y < fineYmin)
-            vertices.push_back(v);
-
-    return vertices;
-}
-
-std::vector<ch_vertex> loadVertices(std::string const& path)
-{
-    std::ifstream file(path, std::ios_base::binary);
-    if(!file) throw std::runtime_error("Failed to open input file \""+path+"\"");
-
-    file.seekg(0, std::ios_base::end);
-    const auto size = file.tellg();
-    file.seekg(0);
-    if(!size) throw std::runtime_error("Empty input file \""+path+"\"");
-
-    static_assert(sizeof(ch_vertex)==3*sizeof(double));
-    if(size%(sizeof(ch_vertex)))
-        throw std::runtime_error("File size is not a multiple of 3×float64 for \""+path+"\"");
-
-    std::vector<ch_vertex> vertices(size/sizeof(ch_vertex));
-    file.read(reinterpret_cast<char*>(vertices.data()), size);
-    if(!file) throw std::runtime_error("Failed to read input file \""+path+"\"");
-
-    return vertices;
-}
-
-std::vector<int> loadIndices(std::string const& path)
-{
-    std::ifstream file(path, std::ios_base::binary);
-    if(!file) throw std::runtime_error("Failed to open input file \""+path+"\"");
-
-    file.seekg(0, std::ios_base::end);
-    const auto size = file.tellg();
-    file.seekg(0);
-    if(!size) throw std::runtime_error("Empty input file \""+path+"\"");
-
-    const auto numIndices = size/sizeof(uint64_t);
-    if(numIndices % 3) throw std::runtime_error("Number of indices must be a multiple of 3");
-
-    std::vector<uint64_t> data(numIndices);
-    file.read(reinterpret_cast<char*>(data.data()), size);
-    std::vector<int> indices(data.size());
-    std::transform(data.begin(), data.end(), indices.begin(),
-                   [](const uint64_t x){ return int(x); });
-
-    return indices;
-}
-
 bool saveToBin(std::string const& path, std::vector<ch_vertex> const& vertices,
-               int const*const indices, const uint32_t indexCount)
+               std::vector<int> const& indices)
 {
     std::ofstream out(path, std::ios_base::binary);
     const uint32_t vertexCount = vertices.size();
+    const uint32_t indexCount = indices.size();
     out.write(reinterpret_cast<const char*>(&vertexCount), sizeof vertexCount);
     out.write(reinterpret_cast<const char*>(&indexCount), sizeof indexCount);
     {
@@ -189,7 +176,7 @@ bool saveToBin(std::string const& path, std::vector<ch_vertex> const& vertices,
     }
     {
         std::vector<uint32_t> indicesToWrite(indexCount);
-        std::transform(indices, indices+indexCount, indicesToWrite.begin(),
+        std::transform(indices.begin(), indices.end(), indicesToWrite.begin(),
                        [](const int x){ return uint32_t(x); });
         out.write(reinterpret_cast<const char*>(indicesToWrite.data()),
                   indicesToWrite.size()*sizeof indicesToWrite[0]);
@@ -200,10 +187,7 @@ bool saveToBin(std::string const& path, std::vector<ch_vertex> const& vertices,
 
 int usage(const char*const argv0, const int ret)
 {
-    (ret ? std::cerr : std::cout) << argv0
-        << " {--fine-vertices|-f} input-file-fine-vertices.bin"
-           " {{--coarse-vertices|-c} input-file-coarse-vertices.bin | {--fine-indices|-i} input-file-fine-indices.bin}"
-           " [-o output-file.obj] [-b output-file.bin]\n";
+    (ret ? std::cerr : std::cout) << argv0 << " [-o output-file.obj] [-b output-file.bin]\n";
     return ret;
 }
 
@@ -213,9 +197,6 @@ try
     // Override the default limit of 128MiB, but let the user override our choice too
     setenv("QT_IMAGEIO_MAXALLOC","4096",false);
 
-    std::string inFileNameFineVertices;
-    std::string inFileNameFineIndices;
-    std::string inFileNameCoarseVertices;
     std::string outObjFileName;
     std::string outBinFileName;
     for(int n = 1; n < argc; ++n)
@@ -233,21 +214,6 @@ try
             }                                                               \
             do{}while(0)
 
-        if(arg == "--fine-vertices" || arg == "-f")
-        {
-            GO_TO_PARAM();
-            inFileNameFineVertices = argv[n];
-        }
-        else if(arg == "--coarse-vertices" || arg == "-c")
-        {
-            GO_TO_PARAM();
-            inFileNameCoarseVertices = argv[n];
-        }
-        else if(arg == "--fine-indices" || arg == "-i")
-        {
-            GO_TO_PARAM();
-            inFileNameFineIndices = argv[n];
-        }
         else if(arg == "-o")
         {
             GO_TO_PARAM();
@@ -264,68 +230,21 @@ try
         }
     }
 
-    if(inFileNameCoarseVertices.empty() == inFileNameFineIndices.empty())
-    {
-        std::cerr << "Either coarse vertices must be present, or fine indices\n";
-        return 1;
-    }
-
-    const bool coarseMeshPresent = !inFileNameCoarseVertices.empty();
-
-    loadHeightMap();
-
     using namespace std::chrono;
 
+    std::cerr << "Loading height map...\n";
     const auto t0 = steady_clock::now();
-    const auto verticesCoarse = coarseMeshPresent ? loadVertices(inFileNameCoarseVertices) : std::vector<ch_vertex>{};
+    loadHeightMap();
     const auto t1 = steady_clock::now();
-    if(coarseMeshPresent)
-        std::cerr << verticesCoarse.size() << " vertices loaded for coarse mesh in " << toSeconds(t1-t0) << " s\n";
-    const auto t2 = steady_clock::now();
-    const auto verticesFine = loadVertices(inFileNameFineVertices);
-    const auto t3 = steady_clock::now();
-    std::cerr << verticesFine.size() << " vertices loaded for fine mesh in " << toSeconds(t3-t2) << " s\n";
+    std::cerr << "Loaded in " << toSeconds(t1-t0) << " s\n";
 
-    std::vector<int> indicesLoaded;
-    int* indices = nullptr;
-    int numFaces = 0;
-    std::vector<ch_vertex> combined;
-    if(coarseMeshPresent)
-    {
-        const auto t4 = steady_clock::now();
-        combined = combine(verticesCoarse, verticesFine);
-        const auto t5 = steady_clock::now();
-        std::cerr << combined.size() << " vertices in the combined mesh in " << toSeconds(t5-t4) << " s\n";
-
-        std::cerr << "Creating faces...\n";
-        const auto t6 = steady_clock::now();
-        convhull_3d_build(combined.data(), combined.size(), &indices, &numFaces);
-        const auto t7 = steady_clock::now();
-        std::cerr << numFaces << " faces created in " << toSeconds(t7-t6) << " s\n";
-    }
-    else
-    {
-        combined = verticesFine;
-
-        const auto t0 = steady_clock::now();
-        indicesLoaded = loadIndices(inFileNameFineIndices);
-        numFaces = indicesLoaded.size() / 3;
-        indices = indicesLoaded.data();
-        const auto t1 = steady_clock::now();
-        std::cerr << indicesLoaded.size() << " indices loaded in " << toSeconds(t1-t0) << " s\n";
-    }
-
-    std::cerr << "Applying heights...\n";
-    const auto t8 = steady_clock::now();
-    applyHeightMap(combined);
-    const auto t9 = steady_clock::now();
-    std::cerr << "Heights applied in " << toSeconds(t9-t8) << " s\n";
+    auto mesh = createCell(1, 0, 1000);
 
     if(!outBinFileName.empty())
     {
         std::cerr << "Saving results to \"" << outBinFileName << "\"...\n";
         const auto t10 = steady_clock::now();
-        const bool ok = saveToBin(outBinFileName, combined, indices, 3*numFaces);
+        const bool ok = saveToBin(outBinFileName, mesh.vertices, mesh.indices);
         const auto t11 = steady_clock::now();
         if(ok)
             std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
@@ -337,7 +256,7 @@ try
     {
         std::cerr << "Saving results to \"" << outObjFileName << "\"...\n";
         const auto t12 = steady_clock::now();
-        for(auto& v : combined)
+        for(auto& v : mesh.vertices)
         {
             // Saving an OBJ file via ConvHull stores vertices in fixed-point X.6
             // format, so don't try using astronomical units as the unit of length
@@ -345,7 +264,9 @@ try
             v.y *= AU;
             v.z *= AU;
         }
-        convhull_3d_export_obj(combined.data(), combined.size(), indices, numFaces, false, outObjFileName.c_str());
+        convhull_3d_export_obj(mesh.vertices.data(), mesh.vertices.size(),
+                               mesh.indices.data(), mesh.indices.size() / 3,
+                               false, outObjFileName.c_str());
         const auto t13 = steady_clock::now();
         std::cerr << "Saved in " << toSeconds(t13-t12) << " s\n";
     }

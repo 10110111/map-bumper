@@ -118,14 +118,21 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex, const int nu
 
     const double numQuadsPerSide = numQuadsPerCellLength * numCellsPerCubeSide;
 
+#define RECT_GRID 1
+#define ISOS_TRIANG_GRID 2
+#define GRID_CHOICE ISOS_TRIANG_GRID
     const double z = 1;
     for(double j = 0; j <= numQuadsPerCellLength; ++j)
     {
         const double y = cellY + 2 * j / numQuadsPerSide;
         for(double i = 0; i <= numQuadsPerCellLength; ++i)
         {
+#if GRID_CHOICE == RECT_GRID
             const double x = cellX + 2 * i / numQuadsPerSide;
-
+#elif GRID_CHOICE == ISOS_TRIANG_GRID // TODO: straighten the zigzag borders
+            const double shift = std::lround(j) % 2 ? 0.5 : 0;
+            const double x = cellX + 2 * (i + shift) / numQuadsPerSide;
+#endif
             // Apply equi-angular cubemap transformation
             const double eaX = std::tan(M_PI/4 * x);
             const double eaY = std::tan(M_PI/4 * y);
@@ -140,12 +147,33 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex, const int nu
     {
         for(int i = 0; i < numQuadsPerCellLength; ++i)
         {
+#if GRID_CHOICE == RECT_GRID
             mesh.indices.push_back( j    * lineSize + i  );
             mesh.indices.push_back( j    * lineSize + i+1);
             mesh.indices.push_back((j+1) * lineSize + i  );
             mesh.indices.push_back((j+1) * lineSize + i  );
             mesh.indices.push_back( j    * lineSize + i+1);
             mesh.indices.push_back((j+1) * lineSize + i+1);
+#elif GRID_CHOICE == ISOS_TRIANG_GRID // TODO: straighten the zigzag borders
+            if(j % 2 == 0)
+            {
+                mesh.indices.push_back( j    * lineSize + i  );
+                mesh.indices.push_back( j    * lineSize + i+1);
+                mesh.indices.push_back((j+1) * lineSize + i  );
+                mesh.indices.push_back((j+1) * lineSize + i  );
+                mesh.indices.push_back( j    * lineSize + i+1);
+                mesh.indices.push_back((j+1) * lineSize + i+1);
+            }
+            else
+            {
+                mesh.indices.push_back( j    * lineSize + i  );
+                mesh.indices.push_back((j+1) * lineSize + i+1);
+                mesh.indices.push_back((j+1) * lineSize + i  );
+                mesh.indices.push_back( j    * lineSize + i  );
+                mesh.indices.push_back( j    * lineSize + i+1);
+                mesh.indices.push_back((j+1) * lineSize + i+1);
+            }
+#endif
         }
     }
 
@@ -238,7 +266,7 @@ try
     const auto t1 = steady_clock::now();
     std::cerr << "Loaded in " << toSeconds(t1-t0) << " s\n";
 
-    auto mesh = createCell(1, 0, 1000);
+    auto mesh = createCell(8, 21, 1000);
 
     if(!outBinFileName.empty())
     {

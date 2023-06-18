@@ -329,6 +329,14 @@ try
 
     std::cerr << "Saving results to \"" << outObjFileName << "\"...\n";
     const auto t12 = steady_clock::now();
+    for(auto& v : combined)
+    {
+        // Saving an OBJ file via ConvHull stores vertices in fixed-point X.6
+        // format, so don't try using astronomical units as the unit of length
+        v.x *= AU;
+        v.y *= AU;
+        v.z *= AU;
+    }
     convhull_3d_export_obj(combined.data(), combined.size(), indices, numFaces, false, outObjFileName.c_str());
     const auto t13 = steady_clock::now();
     std::cerr << "Saved in " << toSeconds(t13-t12) << " s\n";

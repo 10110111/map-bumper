@@ -102,12 +102,44 @@ struct Mesh
     std::vector<int> indices;
 };
 
+enum class Direction
+{
+    X,
+    MinusX,
+    Y,
+    MinusY,
+    Z,
+    MinusZ,
+};
+
+ch_vertex rotateZPlaneToDir(ch_vertex const& v, Direction dir)
+{
+    const auto x = v.x, y = v.y, z = v.z;
+    switch(dir)
+    {
+    case Direction::X:
+        return {z, y, -x};
+    case Direction::MinusX:
+        return {-z, -y, -x};
+    case Direction::Y:
+        return {-y, z, -x};
+    case Direction::MinusY:
+        return {y, -z, -x};
+    case Direction::Z:
+        return v;
+    case Direction::MinusZ:
+        return {-x, y, -z};
+    }
+    throw std::logic_error("bad direction");
+}
+
 // The whole sphere is split into 6 sides corresponding to a circumscribed cube
 // onto which the vertices are projected from the center. Each side is split to
 // an N×N grid of cells.
 // This function creates the specified single cell from the upper (z=1) side of
 // the cube.
-Mesh createCell(const int numCellsPerCubeSide, const int cellIndex, const int numQuadsPerCellLength)
+Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
+                const int numQuadsPerCellLength, const Direction dir)
 {
     Mesh mesh;
 
@@ -137,7 +169,9 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex, const int nu
             const double eaX = std::tan(M_PI/4 * x);
             const double eaY = std::tan(M_PI/4 * y);
 
-            const auto v = applyHeightMap({eaX,eaY,z});
+            const auto rotated = rotateZPlaneToDir({eaX,eaY,z}, dir);
+
+            const auto v = applyHeightMap(rotated);
             mesh.vertices.push_back(v);
         }
     }
@@ -266,7 +300,7 @@ try
     const auto t1 = steady_clock::now();
     std::cerr << "Loaded in " << toSeconds(t1-t0) << " s\n";
 
-    auto mesh = createCell(8, 21, 1000);
+    auto mesh = createCell(8, 21, 1000, Direction::X);
 
     if(!outBinFileName.empty())
     {

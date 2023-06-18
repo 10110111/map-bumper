@@ -321,28 +321,34 @@ try
     const auto t9 = steady_clock::now();
     std::cerr << "Heights applied in " << toSeconds(t9-t8) << " s\n";
 
-    std::cerr << "Saving results to \"" << outBinFileName << "\"...\n";
-    const auto t10 = steady_clock::now();
-    const bool ok = saveToBin(outBinFileName, combined, indices, 3*numFaces);
-    const auto t11 = steady_clock::now();
-    if(ok)
-        std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
-    else
-        std::cerr << "Failed to save to \"" << outBinFileName << "\"\n";
-
-    std::cerr << "Saving results to \"" << outObjFileName << "\"...\n";
-    const auto t12 = steady_clock::now();
-    for(auto& v : combined)
+    if(!outBinFileName.empty())
     {
-        // Saving an OBJ file via ConvHull stores vertices in fixed-point X.6
-        // format, so don't try using astronomical units as the unit of length
-        v.x *= AU;
-        v.y *= AU;
-        v.z *= AU;
+        std::cerr << "Saving results to \"" << outBinFileName << "\"...\n";
+        const auto t10 = steady_clock::now();
+        const bool ok = saveToBin(outBinFileName, combined, indices, 3*numFaces);
+        const auto t11 = steady_clock::now();
+        if(ok)
+            std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
+        else
+            std::cerr << "Failed to save to \"" << outBinFileName << "\"\n";
     }
-    convhull_3d_export_obj(combined.data(), combined.size(), indices, numFaces, false, outObjFileName.c_str());
-    const auto t13 = steady_clock::now();
-    std::cerr << "Saved in " << toSeconds(t13-t12) << " s\n";
+
+    if(!outObjFileName.empty())
+    {
+        std::cerr << "Saving results to \"" << outObjFileName << "\"...\n";
+        const auto t12 = steady_clock::now();
+        for(auto& v : combined)
+        {
+            // Saving an OBJ file via ConvHull stores vertices in fixed-point X.6
+            // format, so don't try using astronomical units as the unit of length
+            v.x *= AU;
+            v.y *= AU;
+            v.z *= AU;
+        }
+        convhull_3d_export_obj(combined.data(), combined.size(), indices, numFaces, false, outObjFileName.c_str());
+        const auto t13 = steady_clock::now();
+        std::cerr << "Saved in " << toSeconds(t13-t12) << " s\n";
+    }
 }
 catch(std::exception const& ex)
 {

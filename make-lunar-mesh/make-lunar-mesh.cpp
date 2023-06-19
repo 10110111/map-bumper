@@ -15,7 +15,7 @@ int moonHeightMapWidth, moonHeightMapHeight, moonHeightMapRowStride;
 
 void loadHeightMap()
 {
-    static QImage in("/home/ruslan/Downloads/Moon/CGI Moon Kit displacement map - ldem_16_uint.tif");
+    static QImage in("/home/ruslan/Downloads/Celestial bodies and space/Moon/generated-for-stellarium/23k/mixed-height-map.png");
     if(in.isNull())
         throw std::runtime_error("Failed to open input file");
     if(!in.isGrayscale())

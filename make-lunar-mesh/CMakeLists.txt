@@ -14,3 +14,6 @@ find_package(Qt6Gui 6.3 REQUIRED)
 
 add_executable(make-lunar-mesh make-lunar-mesh.cpp)
 target_link_libraries(make-lunar-mesh Qt6::Core Qt6::Gui)
+
+add_executable(obj2bin obj2bin.cpp)
+target_link_libraries(obj2bin)

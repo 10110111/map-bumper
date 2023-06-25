@@ -1046,8 +1046,7 @@ void convhull_3d_export_obj
     obj_file = fopen(obj_filename, "wt");
 #endif
     if (obj_file==NULL) {
-        fprintf(stderr,"Error %d \n", errno);
-        fprintf(stderr,"It's null");
+        perror("Failed to open obj file for writing");
     }
     fprintf(obj_file, "o\n");
     CH_FLOAT scale;

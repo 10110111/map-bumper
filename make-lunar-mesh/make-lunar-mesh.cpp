@@ -300,41 +300,48 @@ try
     const auto t1 = steady_clock::now();
     std::cerr << "Loaded in " << toSeconds(t1-t0) << " s\n";
 
+    static constexpr char symbols[6] = {'X', 'x', 'Y', 'y', 'Z', 'z'};
     for(const auto dir : {Direction::X, Direction::MinusX, Direction::Y, Direction::MinusY, Direction::Z, Direction::MinusZ})
     {
-        auto mesh = createCell(1, 0, 1000, dir);
-
-        if(!outBinFileName.empty())
+        const int cellsPerCubeSide = 2;
+        const int cellsPerSideSquared = cellsPerCubeSide * cellsPerCubeSide;
+        for(int cellIndex = 0; cellIndex < cellsPerSideSquared; ++cellIndex)
         {
-            const auto currOutFileName = outBinFileName + "-" + std::to_string(int(dir)) + ".bin";
-            std::cerr << "Saving results to \"" << currOutFileName << "\"...\n";
-            const auto t10 = steady_clock::now();
-            const bool ok = saveToBin(currOutFileName, mesh.vertices, mesh.indices);
-            const auto t11 = steady_clock::now();
-            if(ok)
-                std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
-            else
-                std::cerr << "Failed to save to \"" << outBinFileName << "\"\n";
-        }
+            auto mesh = createCell(cellsPerCubeSide, cellIndex, 500/cellsPerCubeSide, dir);
 
-        if(!outObjFileName.empty())
-        {
-            const auto fileName = outObjFileName + "-" + std::to_string(int(dir)) + ".obj";
-            std::cerr << "Saving results to \"" << fileName << "\"...\n";
-            const auto t12 = steady_clock::now();
-            for(auto& v : mesh.vertices)
+            if(!outBinFileName.empty())
             {
-                // Saving an OBJ file via ConvHull stores vertices in fixed-point X.6
-                // format, so don't try using astronomical units as the unit of length
-                v.x *= AU;
-                v.y *= AU;
-                v.z *= AU;
+                const auto currOutFileName = outBinFileName + "-" + symbols[int(dir)] +
+                                                std::to_string(int(cellIndex)) + ".bin";
+                std::cerr << "Saving results to \"" << currOutFileName << "\"...\n";
+                const auto t10 = steady_clock::now();
+                const bool ok = saveToBin(currOutFileName, mesh.vertices, mesh.indices);
+                const auto t11 = steady_clock::now();
+                if(ok)
+                    std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
+                else
+                    std::cerr << "Failed to save to \"" << outBinFileName << "\"\n";
             }
-            convhull_3d_export_obj(mesh.vertices.data(), mesh.vertices.size(),
-                                   mesh.indices.data(), mesh.indices.size() / 3,
-                                   false, fileName.c_str());
-            const auto t13 = steady_clock::now();
-            std::cerr << "Saved in " << toSeconds(t13-t12) << " s\n";
+
+            if(!outObjFileName.empty())
+            {
+                const auto fileName = outObjFileName + "-" + symbols[int(dir)] + std::to_string(int(cellIndex)) + ".obj";
+                std::cerr << "Saving results to \"" << fileName << "\"...\n";
+                const auto t12 = steady_clock::now();
+                for(auto& v : mesh.vertices)
+                {
+                    // Saving an OBJ file via ConvHull stores vertices in fixed-point X.6
+                    // format, so don't try using astronomical units as the unit of length
+                    v.x *= AU;
+                    v.y *= AU;
+                    v.z *= AU;
+                }
+                convhull_3d_export_obj(mesh.vertices.data(), mesh.vertices.size(),
+                                       mesh.indices.data(), mesh.indices.size() / 3,
+                                       false, fileName.c_str());
+                const auto t13 = steady_clock::now();
+                std::cerr << "Saved in " << toSeconds(t13-t12) << " s\n";
+            }
         }
     }
 }

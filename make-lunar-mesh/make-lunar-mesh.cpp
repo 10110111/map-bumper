@@ -146,7 +146,7 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
 {
 #define RECT_GRID 1
 #define ISOS_TRIANG_GRID 2
-#define GRID_CHOICE RECT_GRID
+#define GRID_CHOICE ISOS_TRIANG_GRID
 
     Mesh mesh;
 #if GRID_CHOICE == ISOS_TRIANG_GRID
@@ -364,8 +364,8 @@ try
         const int cellsPerSideSquared = cellsPerCubeSide * cellsPerCubeSide;
         for(int cellIndex = 0; cellIndex < cellsPerSideSquared; ++cellIndex)
         {
-            const bool needStraightLeftBorder = cellIndex % cellsPerCubeSide == 0;
-            const bool needStraightRightBorder = (cellIndex + 1) % cellsPerCubeSide == 0;
+            const bool needStraightLeftBorder = true;
+            const bool needStraightRightBorder = true;
             auto mesh = createCell(cellsPerCubeSide, cellIndex, 500/cellsPerCubeSide, dir,
                                    needStraightLeftBorder, needStraightRightBorder);
 

@@ -139,7 +139,8 @@ ch_vertex rotateZPlaneToDir(ch_vertex const& v, Direction dir)
 // This function creates the specified single cell from the upper (z=1) side of
 // the cube.
 Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
-                const int numQuadsPerCellLength, const Direction dir)
+                const int numQuadsPerCellLength, const Direction dir,
+                const bool straightenBorders)
 {
     Mesh mesh;
 
@@ -161,8 +162,11 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
         {
 #if GRID_CHOICE == RECT_GRID
             const double x = cellX + 2 * i / numQuadsPerSide;
-#elif GRID_CHOICE == ISOS_TRIANG_GRID // TODO: straighten the zigzag borders
-            const double shift = std::lround(j) % 2 ? 0.5 : 0;
+#elif GRID_CHOICE == ISOS_TRIANG_GRID
+            // FIXME: left border triangles become too large when the border is straightened
+            const bool needsStraightening = straightenBorders &&
+                ((cellI==0 && i==0) || (cellI+1==numCellsPerCubeSide && i==numQuadsPerCellLength));
+            const double shift = std::lround(j) % 2 && !needsStraightening ? 0.5 : 0;
             const double x = cellX + 2 * (i + shift) / numQuadsPerSide;
 #endif
             // Apply equi-angular cubemap transformation
@@ -188,7 +192,7 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
             mesh.indices.push_back((j+1) * lineSize + i  );
             mesh.indices.push_back( j    * lineSize + i+1);
             mesh.indices.push_back((j+1) * lineSize + i+1);
-#elif GRID_CHOICE == ISOS_TRIANG_GRID // TODO: straighten the zigzag borders
+#elif GRID_CHOICE == ISOS_TRIANG_GRID
             if(j % 2 == 0)
             {
                 mesh.indices.push_back( j    * lineSize + i  );
@@ -307,7 +311,7 @@ try
         const int cellsPerSideSquared = cellsPerCubeSide * cellsPerCubeSide;
         for(int cellIndex = 0; cellIndex < cellsPerSideSquared; ++cellIndex)
         {
-            auto mesh = createCell(cellsPerCubeSide, cellIndex, 500/cellsPerCubeSide, dir);
+            auto mesh = createCell(cellsPerCubeSide, cellIndex, 500/cellsPerCubeSide, dir, false);
 
             if(!outBinFileName.empty())
             {

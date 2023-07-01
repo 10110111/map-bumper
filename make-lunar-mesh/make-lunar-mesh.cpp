@@ -140,7 +140,8 @@ ch_vertex rotateZPlaneToDir(ch_vertex const& v, Direction dir)
 // the cube.
 Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
                 int numQuadsPerCellLength, const Direction dir,
-                const bool straightenBorders)
+                [[maybe_unused]] const bool straightenLeftBorder,
+                [[maybe_unused]] const bool straightenRightBorder)
 {
 #define RECT_GRID 1
 #define ISOS_TRIANG_GRID 2
@@ -148,7 +149,7 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
 
     Mesh mesh;
 #if GRID_CHOICE == ISOS_TRIANG_GRID
-    if(straightenBorders && numQuadsPerCellLength % 2 == 1)
+    if(numQuadsPerCellLength % 2 == 1)
     {
         // This makes the top and bottom parts pointwise
         // compatible with the meshes of neighboring cells.
@@ -176,7 +177,7 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
             const bool isRightBorder = i==numQuadsPerCellLength;
             // Right border is straightened by avoiding the shift, left border
             // will be straightened by adding one more vertex to the left of it.
-            const bool needsShift = straightenBorders && isRightBorder;
+            const bool needsShift = straightenRightBorder && isRightBorder;
             const bool isOddRow = std::lround(j) % 2;
             const double shift = isOddRow && !needsShift ? 0.5 : 0;
             const double x = cellX + 2 * (i + shift) / numQuadsPerSide;
@@ -185,16 +186,19 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
             const double eaX = std::tan(M_PI/4 * x);
             const double eaY = std::tan(M_PI/4 * y);
 
-            const auto rotated = rotateZPlaneToDir({eaX,eaY,z}, dir);
+            // Before rotating Z direction to dir, rotate around Z by 90°,
+            // so that zigzag borders are along meridians, connecting the
+            // neighboring cells.
+            const auto rotated = rotateZPlaneToDir({eaY,-eaX,z}, dir);
             const auto v = applyHeightMap(rotated);
 
 #if GRID_CHOICE == ISOS_TRIANG_GRID
-            if(straightenBorders && isOddRow && isLeftBorder)
+            if(straightenLeftBorder && isOddRow && isLeftBorder)
             {
                 const double x = cellX + 2 * i / numQuadsPerSide;
                 const double eaX = std::tan(M_PI/4 * x);
                 const double eaY = std::tan(M_PI/4 * y);
-                const auto rotated = rotateZPlaneToDir({eaX,eaY,z}, dir);
+                const auto rotated = rotateZPlaneToDir({eaY,-eaX,z}, dir);
                 const auto v = applyHeightMap(rotated);
                 mesh.vertices.push_back(v);
             }
@@ -218,14 +222,14 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
         }
     }
 #elif GRID_CHOICE == ISOS_TRIANG_GRID
-    const double lineSize = numQuadsPerCellLength + 1 + (straightenBorders ? 0.5 : 0);
-    const int oddRowIndexShift = straightenBorders ? 1 : 0;
+    const double lineSize = numQuadsPerCellLength + 1 + (straightenLeftBorder ? 0.5 : 0);
+    const int oddRowIndexShift = straightenLeftBorder ? 1 : 0;
     for(int j = 0; j < numQuadsPerCellLength; ++j)
     {
         for(int i = 0; i < numQuadsPerCellLength; ++i)
         {
             const bool isLeftBorder = i==0;
-            if(straightenBorders && isLeftBorder)
+            if(straightenLeftBorder && isLeftBorder)
             {
                 if(j % 2 == 0)
                 {
@@ -359,7 +363,10 @@ try
         const int cellsPerSideSquared = cellsPerCubeSide * cellsPerCubeSide;
         for(int cellIndex = 0; cellIndex < cellsPerSideSquared; ++cellIndex)
         {
-            auto mesh = createCell(cellsPerCubeSide, cellIndex, 500/cellsPerCubeSide, dir, false);
+            const bool needStraightLeftBorder = cellIndex % cellsPerCubeSide == 0;
+            const bool needStraightRightBorder = (cellIndex + 1) % cellsPerCubeSide == 0;
+            auto mesh = createCell(cellsPerCubeSide, cellIndex, 500/cellsPerCubeSide, dir,
+                                   needStraightLeftBorder, needStraightRightBorder);
 
             if(!outBinFileName.empty())
             {

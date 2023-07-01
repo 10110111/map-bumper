@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <QImage>
+#include <glm/glm.hpp>
 #define CONVHULL_3D_ENABLE
 #include "convhull_3d.h"
 
@@ -81,7 +82,7 @@ double sample(T const* data, const size_t width, const size_t height, const size
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
 
-ch_vertex applyHeightMap(ch_vertex const& v)
+glm::dvec3 applyHeightMap(glm::dvec3 const& v)
 {
     const auto r0 = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
     const auto longitude = std::atan2(v.x, -v.y); // basically the same as atan(y,x)+90°, but in [-PI,PI]
@@ -98,7 +99,7 @@ ch_vertex applyHeightMap(ch_vertex const& v)
 
 struct Mesh
 {
-    std::vector<ch_vertex> vertices;
+    std::vector<glm::dvec3> vertices;
     std::vector<int> indices;
 };
 
@@ -112,7 +113,7 @@ enum class Direction
     MinusZ,
 };
 
-ch_vertex rotateZPlaneToDir(ch_vertex const& v, Direction dir)
+glm::dvec3 rotateZPlaneToDir(glm::dvec3 const& v, Direction dir)
 {
     const auto x = v.x, y = v.y, z = v.z;
     switch(dir)
@@ -277,7 +278,7 @@ double toSeconds(const std::chrono::duration<Rep,Per> d)
     return duration_cast<microseconds>(d).count() * 1e-6;
 }
 
-bool saveToBin(std::string const& path, std::vector<ch_vertex> const& vertices,
+bool saveToBin(std::string const& path, std::vector<glm::dvec3> const& vertices,
                std::vector<int> const& indices)
 {
     std::ofstream out(path, std::ios_base::binary);
@@ -287,7 +288,7 @@ bool saveToBin(std::string const& path, std::vector<ch_vertex> const& vertices,
     out.write(reinterpret_cast<const char*>(&indexCount), sizeof indexCount);
     {
         std::vector<float> verticesToWrite(3*vertices.size());
-        std::transform(&vertices[0].v[0], &vertices[0].v[0]+verticesToWrite.size(),
+        std::transform(&vertices[0][0], &vertices[0][0]+verticesToWrite.size(),
                        verticesToWrite.begin(), [](const double x){ return float(x); });
         out.write(reinterpret_cast<const char*>(verticesToWrite.data()),
                   verticesToWrite.size()*sizeof verticesToWrite[0]);
@@ -395,7 +396,10 @@ try
                     v.y *= AU;
                     v.z *= AU;
                 }
-                convhull_3d_export_obj(mesh.vertices.data(), mesh.vertices.size(),
+                std::vector<ch_vertex> verticesToWrite(mesh.vertices.size());
+                std::transform(&mesh.vertices[0], &mesh.vertices[0]+verticesToWrite.size(), verticesToWrite.begin(),
+                               [](const glm::dvec3 v){ return ch_vertex{float(v.x),float(v.y),float(v.z)}; });
+                convhull_3d_export_obj(verticesToWrite.data(), verticesToWrite.size(),
                                        mesh.indices.data(), mesh.indices.size() / 3,
                                        false, fileName.c_str());
                 const auto t13 = steady_clock::now();

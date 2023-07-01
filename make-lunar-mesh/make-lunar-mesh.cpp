@@ -139,10 +139,22 @@ ch_vertex rotateZPlaneToDir(ch_vertex const& v, Direction dir)
 // This function creates the specified single cell from the upper (z=1) side of
 // the cube.
 Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
-                const int numQuadsPerCellLength, const Direction dir,
+                int numQuadsPerCellLength, const Direction dir,
                 const bool straightenBorders)
 {
+#define RECT_GRID 1
+#define ISOS_TRIANG_GRID 2
+#define GRID_CHOICE RECT_GRID
+
     Mesh mesh;
+#if GRID_CHOICE == ISOS_TRIANG_GRID
+    if(straightenBorders && numQuadsPerCellLength % 2 == 1)
+    {
+        // This makes the top and bottom parts pointwise
+        // compatible with the meshes of neighboring cells.
+        ++numQuadsPerCellLength;
+    }
+#endif
 
     const double cellI = cellIndex % numCellsPerCubeSide;
     const double cellJ = cellIndex / numCellsPerCubeSide;
@@ -151,9 +163,6 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
 
     const double numQuadsPerSide = numQuadsPerCellLength * numCellsPerCubeSide;
 
-#define RECT_GRID 1
-#define ISOS_TRIANG_GRID 2
-#define GRID_CHOICE RECT_GRID
     const double z = 1;
     for(double j = 0; j <= numQuadsPerCellLength; ++j)
     {
@@ -163,10 +172,13 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
 #if GRID_CHOICE == RECT_GRID
             const double x = cellX + 2 * i / numQuadsPerSide;
 #elif GRID_CHOICE == ISOS_TRIANG_GRID
-            // FIXME: left border triangles become too large when the border is straightened
-            const bool needsStraightening = straightenBorders &&
-                ((cellI==0 && i==0) || (cellI+1==numCellsPerCubeSide && i==numQuadsPerCellLength));
-            const double shift = std::lround(j) % 2 && !needsStraightening ? 0.5 : 0;
+            const bool isLeftBorder = i==0;
+            const bool isRightBorder = i==numQuadsPerCellLength;
+            // Right border is straightened by avoiding the shift, left border
+            // will be straightened by adding one more vertex to the left of it.
+            const bool needsShift = straightenBorders && isRightBorder;
+            const bool isOddRow = std::lround(j) % 2;
+            const double shift = isOddRow && !needsShift ? 0.5 : 0;
             const double x = cellX + 2 * (i + shift) / numQuadsPerSide;
 #endif
             // Apply equi-angular cubemap transformation
@@ -174,46 +186,82 @@ Mesh createCell(const int numCellsPerCubeSide, const int cellIndex,
             const double eaY = std::tan(M_PI/4 * y);
 
             const auto rotated = rotateZPlaneToDir({eaX,eaY,z}, dir);
-
             const auto v = applyHeightMap(rotated);
+
+#if GRID_CHOICE == ISOS_TRIANG_GRID
+            if(straightenBorders && isOddRow && isLeftBorder)
+            {
+                const double x = cellX + 2 * i / numQuadsPerSide;
+                const double eaX = std::tan(M_PI/4 * x);
+                const double eaY = std::tan(M_PI/4 * y);
+                const auto rotated = rotateZPlaneToDir({eaX,eaY,z}, dir);
+                const auto v = applyHeightMap(rotated);
+                mesh.vertices.push_back(v);
+            }
+#endif
             mesh.vertices.push_back(v);
         }
     }
 
+#if GRID_CHOICE == RECT_GRID
     const int lineSize = numQuadsPerCellLength + 1;
     for(int j = 0; j < numQuadsPerCellLength; ++j)
     {
         for(int i = 0; i < numQuadsPerCellLength; ++i)
         {
-#if GRID_CHOICE == RECT_GRID
             mesh.indices.push_back( j    * lineSize + i  );
             mesh.indices.push_back( j    * lineSize + i+1);
             mesh.indices.push_back((j+1) * lineSize + i  );
             mesh.indices.push_back((j+1) * lineSize + i  );
             mesh.indices.push_back( j    * lineSize + i+1);
             mesh.indices.push_back((j+1) * lineSize + i+1);
+        }
+    }
 #elif GRID_CHOICE == ISOS_TRIANG_GRID
+    const double lineSize = numQuadsPerCellLength + 1 + (straightenBorders ? 0.5 : 0);
+    const int oddRowIndexShift = straightenBorders ? 1 : 0;
+    for(int j = 0; j < numQuadsPerCellLength; ++j)
+    {
+        for(int i = 0; i < numQuadsPerCellLength; ++i)
+        {
+            const bool isLeftBorder = i==0;
+            if(straightenBorders && isLeftBorder)
+            {
+                if(j % 2 == 0)
+                {
+                    mesh.indices.push_back( j    * lineSize + i                   );
+                    mesh.indices.push_back((j+1) * lineSize + i + oddRowIndexShift);
+                    mesh.indices.push_back((j+1) * lineSize + i/* + oddRowIndexShift - 1 = 0 */);
+                }
+                else
+                {
+                    mesh.indices.push_back( j    * lineSize + i + oddRowIndexShift);
+                    mesh.indices.push_back((j+1) * lineSize + i                   );
+                    mesh.indices.push_back( j    * lineSize + i/* + oddRowIndexShift - 1 = 0 */);
+                }
+            }
+
             if(j % 2 == 0)
             {
-                mesh.indices.push_back( j    * lineSize + i  );
-                mesh.indices.push_back( j    * lineSize + i+1);
-                mesh.indices.push_back((j+1) * lineSize + i  );
-                mesh.indices.push_back((j+1) * lineSize + i  );
-                mesh.indices.push_back( j    * lineSize + i+1);
-                mesh.indices.push_back((j+1) * lineSize + i+1);
+                mesh.indices.push_back( j    * lineSize + i                     );
+                mesh.indices.push_back( j    * lineSize + i+1                   );
+                mesh.indices.push_back((j+1) * lineSize + i   + oddRowIndexShift);
+                mesh.indices.push_back((j+1) * lineSize + i   + oddRowIndexShift);
+                mesh.indices.push_back( j    * lineSize + i+1                   );
+                mesh.indices.push_back((j+1) * lineSize + i+1 + oddRowIndexShift);
             }
             else
             {
-                mesh.indices.push_back( j    * lineSize + i  );
-                mesh.indices.push_back((j+1) * lineSize + i+1);
-                mesh.indices.push_back((j+1) * lineSize + i  );
-                mesh.indices.push_back( j    * lineSize + i  );
-                mesh.indices.push_back( j    * lineSize + i+1);
-                mesh.indices.push_back((j+1) * lineSize + i+1);
+                mesh.indices.push_back( j    * lineSize + i   + oddRowIndexShift);
+                mesh.indices.push_back((j+1) * lineSize + i+1                   );
+                mesh.indices.push_back((j+1) * lineSize + i                     );
+                mesh.indices.push_back( j    * lineSize + i   + oddRowIndexShift);
+                mesh.indices.push_back( j    * lineSize + i+1 + oddRowIndexShift);
+                mesh.indices.push_back((j+1) * lineSize + i+1                   );
             }
-#endif
         }
     }
+#endif
 
     return mesh;
 }

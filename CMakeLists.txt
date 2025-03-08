@@ -22,6 +22,9 @@ find_package(Qt6Gui 6.3 REQUIRED)
 add_executable(equirect2cubemap equirect2cubemap.cpp)
 target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 
+add_executable(equirect2hips equirect2hips.cpp healpix.cpp)
+target_link_libraries(equirect2hips Qt6::Core Qt6::Gui)
+
 add_executable(heightmap2normalmap heightmap2normalmap.cpp)
 target_link_libraries(heightmap2normalmap Qt6::Core Qt6::Gui)
 

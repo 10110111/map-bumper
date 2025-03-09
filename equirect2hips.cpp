@@ -487,66 +487,69 @@ try
         std::cerr << "100% done in " << formatDeltaTime(time0, time1) << "\n";
     }
 
-    std::cerr << "Converting tiles to " << imgFormat.toStdString() << "...\n";
-    struct OrderAndPix
+    if(finalExt != initialExt)
     {
-        int order;
-        int pix;
-        OrderAndPix(int order, int pix) : order(order), pix(pix) {}
-    };
-    std::vector<OrderAndPix> jobsToDo;
-    for(int order = 0; order <= orderMax; ++order)
-    {
-        const int pixMax = 12 * (1 << (2 * order));
-        for(int pix = 0; pix < pixMax; ++pix)
-            jobsToDo.emplace_back(order, pix);
-    }
-    std::atomic_int numThreadsReportedFirstProgress{0};
-    std::atomic<unsigned> itemsDone{0};
-    const auto startTime = std::chrono::steady_clock::now();
-    auto work = [&jobsToDo=std::as_const(jobsToDo),outDir,startTime,finalExt,
-                 &numThreadsReportedFirstProgress,&itemsDone](const int jobMin, const int jobMax)
-     {
-         auto time0 = std::chrono::steady_clock::now();
-         size_t itemsDoneInThisThreadAfterLastUpdate = 0;
-         for(int n = jobMin; n < jobMax; ++n)
+        std::cerr << "Converting tiles to " << imgFormat.toStdString() << "...\n";
+        struct OrderAndPix
+        {
+            int order;
+            int pix;
+            OrderAndPix(int order, int pix) : order(order), pix(pix) {}
+        };
+        std::vector<OrderAndPix> jobsToDo;
+        for(int order = 0; order <= orderMax; ++order)
+        {
+            const int pixMax = 12 * (1 << (2 * order));
+            for(int pix = 0; pix < pixMax; ++pix)
+                jobsToDo.emplace_back(order, pix);
+        }
+        std::atomic_int numThreadsReportedFirstProgress{0};
+        std::atomic<unsigned> itemsDone{0};
+        const auto startTime = std::chrono::steady_clock::now();
+        auto work = [&jobsToDo=std::as_const(jobsToDo),outDir,startTime,finalExt,
+                     &numThreadsReportedFirstProgress,&itemsDone](const int jobMin, const int jobMax)
          {
-             const int order = jobsToDo[n].order;
-             const int pix = jobsToDo[n].pix;
-             const auto pathTemplate = QString("%1/Norder%2/Dir%3/Npix%4.%5").arg(outDir).arg(order).arg((pix / 10000) * 10000).arg(pix);
-             const auto inFileName = pathTemplate.arg(initialExt);
-             const auto outFileName = pathTemplate.arg(finalExt);
-             QImage img(inFileName);
-             if(img.isNull())
+             auto time0 = std::chrono::steady_clock::now();
+             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
+             for(int n = jobMin; n < jobMax; ++n)
              {
-                 std::cerr << "Failed to open recently saved file " << inFileName.toStdString() << "\n";
-                 break;
-             }
-             if(!img.save(outFileName))
-             {
-                 std::cerr << "Failed to save output file "  << outFileName.toStdString() << "\n";
-                 break;
-             }
-             if(!QFile(inFileName).remove())
-                 std::cerr << "Warning: failed to remove " << inFileName.toStdString() << "\n";
+                 const int order = jobsToDo[n].order;
+                 const int pix = jobsToDo[n].pix;
+                 const auto pathTemplate = QString("%1/Norder%2/Dir%3/Npix%4.%5").arg(outDir).arg(order).arg((pix / 10000) * 10000).arg(pix);
+                 const auto inFileName = pathTemplate.arg(initialExt);
+                 const auto outFileName = pathTemplate.arg(finalExt);
+                 QImage img(inFileName);
+                 if(img.isNull())
+                 {
+                     std::cerr << "Failed to open recently saved file " << inFileName.toStdString() << "\n";
+                     break;
+                 }
+                 if(!img.save(outFileName))
+                 {
+                     std::cerr << "Failed to save output file "  << outFileName.toStdString() << "\n";
+                     break;
+                 }
+                 if(!QFile(inFileName).remove())
+                     std::cerr << "Warning: failed to remove " << inFileName.toStdString() << "\n";
 
-             handleProgressReporting(jobsToDo.size(), startTime, time0, numThreadsReportedFirstProgress,
-                                     itemsDoneInThisThreadAfterLastUpdate, itemsDone);
-         }
-     };
-    const auto time0 = std::chrono::steady_clock::now();
-    const auto numThreads = std::max(1u, std::thread::hardware_concurrency());
-    std::vector<std::thread> threads;
-    for(size_t n = 0; n < numThreads; ++n)
-    {
-        const size_t jobMin = jobsToDo.size() / numThreads * n;
-        const size_t jobMax = n+1 < numThreads ? jobsToDo.size() / numThreads * (n+1) : jobsToDo.size();
-        threads.emplace_back(work, jobMin, jobMax);
+                 handleProgressReporting(jobsToDo.size(), startTime, time0, numThreadsReportedFirstProgress,
+                                         itemsDoneInThisThreadAfterLastUpdate, itemsDone);
+             }
+         };
+        const auto time0 = std::chrono::steady_clock::now();
+        const auto numThreads = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> threads;
+        for(size_t n = 0; n < numThreads; ++n)
+        {
+            const size_t jobMin = jobsToDo.size() / numThreads * n;
+            const size_t jobMax = n+1 < numThreads ? jobsToDo.size() / numThreads * (n+1) : jobsToDo.size();
+            threads.emplace_back(work, jobMin, jobMax);
+        }
+        for(auto& thread : threads)
+            thread.join();
+        auto time1 = std::chrono::steady_clock::now();
+        std::cerr << "100% done in " << formatDeltaTime(time0, time1) << "\n";
     }
-    for(auto& thread : threads)
-        thread.join();
-    auto time1 = std::chrono::steady_clock::now();
-    std::cerr << "100% done in " << formatDeltaTime(time0, time1) << "\n";
 
     const auto propsPath = outDir+"/properties";
     QFile propsFile(propsPath);

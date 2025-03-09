@@ -576,8 +576,8 @@ try
             props << "hips_copyright        = " << hips_copyright << "\n";
         if(!creator.isEmpty())
             props << "hips_creator          = " << creator << "\n";
-        props << "hips_status           = " << hipsStatus << "\n";
         props << "hips_version          = 1.4\n";
+        props << "hips_status           = " << hipsStatus << "\n";
     }
     if(!propsFile.flush())
         throw std::runtime_error("Failed to write properties file");

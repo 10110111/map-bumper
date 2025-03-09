@@ -247,7 +247,9 @@ Options:
  --type TYPE                Set type (a non-standard property) to TYPE
  -d, --desc DESCRIPTION     Set obs_description to DESCRIPTION
  --frame FRAME              Set hips_frame to FRAME
- -c, --copyright COPYRIGHT  Set obs_copyright to COPYRIGHT
+ --creator CREATOR          Set hips_creator to CREATOR
+ --my-copyright COPYRIGHT   Set hips_copyright to COPYRIGHT
+ --orig-copyright COPYRIGHT Set obs_copyright to COPYRIGHT
  -s, --status STATUS        Set hips_status to STATUS
 )";
     return ret;
@@ -265,7 +267,9 @@ try
     QString surveyType;
     QString description;
     QString frame;
-    QString copyright;
+    QString creator;
+    QString hips_copyright;
+    QString obs_copyright;
     QString hipsStatus = "public mirror clonable";
 
     int totalPositionalArgumentsFound = 0;
@@ -328,10 +332,20 @@ try
             GO_TO_PARAM();
             frame = argv[n];
         }
-        else if(arg == "-c" || arg == "--copyright")
+        else if(arg == "--creator")
         {
             GO_TO_PARAM();
-            copyright = argv[n];
+            creator = argv[n];
+        }
+        else if(arg == "--my-copyright")
+        {
+            GO_TO_PARAM();
+            hips_copyright = argv[n];
+        }
+        else if(arg == "--orig-copyright")
+        {
+            GO_TO_PARAM();
+            obs_copyright = argv[n];
         }
         else if(arg == "-s" || arg == "--status")
         {
@@ -553,8 +567,12 @@ try
         if(!description.isEmpty())
             props << "obs_description       = " << description << "\n";
         props << "hips_frame            = " << frame << "\n";
-        if(!copyright.isEmpty())
-            props << "obs_copyright         = " << copyright << "\n";
+        if(!obs_copyright.isEmpty())
+            props << "obs_copyright         = " << obs_copyright << "\n";
+        if(!hips_copyright.isEmpty())
+            props << "hips_copyright        = " << hips_copyright << "\n";
+        if(!creator.isEmpty())
+            props << "hips_creator          = " << creator << "\n";
         props << "hips_status           = " << hipsStatus << "\n";
         props << "hips_version          = 1.4\n";
     }

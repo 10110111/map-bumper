@@ -201,7 +201,8 @@ try
         std::cerr << "Input file name must end with .IMG\n";
         return 1;
     }
-    const auto labelFileName = QString(inFileName).replace(QRegularExpression("\\.IMG$"), ".LBL");
+    const auto labelFileName = inFileName.endsWith(".IMG") ? QString(inFileName).replace(QRegularExpression("\\.IMG$"), ".LBL")
+                                                           : QString(inFileName).replace(QRegularExpression("\\.img$"), ".lbl");
 
     QFile file(labelFileName);
     if(!file.open(QFile::ReadOnly))

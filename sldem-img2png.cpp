@@ -7,7 +7,6 @@
 #include <QFile>
 
 constexpr double DEGREE = M_PI/180;
-constexpr double LAT_MAX = 60*DEGREE;
 
 double fetch(std::ifstream& in, const off_t width, const off_t height, const off_t rowStride,
              const off_t requestedX, const off_t requestedY)
@@ -43,10 +42,10 @@ double fetch(std::ifstream& in, const off_t width, const off_t height, const off
 }
 
 double sample(std::ifstream& in, const off_t width, const off_t height, const off_t rowStride,
-              const double longitude, const double latitude)
+              const double longitude, const double latitude, const double maxLatitude)
 {
     assert(-M_PI <= longitude && longitude <= M_PI);
-    assert(-LAT_MAX <= latitude && latitude <= LAT_MAX);
+    assert(-maxLatitude <= latitude && latitude <= maxLatitude);
 
     const auto deltaLon = -2*M_PI/width;
     const auto firstLon = 2*M_PI;
@@ -54,8 +53,8 @@ double sample(std::ifstream& in, const off_t width, const off_t height, const of
     const auto x = (longitude - firstLon) / deltaLon;
     const auto floorX = std::floor(x);
 
-    const auto deltaLat = -2*LAT_MAX/(height-1);
-    const auto firstLat = LAT_MAX;
+    const auto deltaLat = -2*maxLatitude/(height-1);
+    const auto firstLat = maxLatitude;
 
     const auto y = (latitude - firstLat) / deltaLat;
     const auto floorY = std::floor(y);
@@ -85,6 +84,7 @@ Options:
  -w,--width NUM         Width of the output map (must be even; height is 0.5×this)
  -r,--radius NUM        Radius of the reference sphere in km
  -k,--km-per-unit NUM   Unit of altitude to use in the output
+ -l,--max-lat NUM       Override maximum latitude (in degrees) by rescaling the map (default is 60° as for SLDEM2015)
  -i FILE                Input file from SLDEM2015, must be accompanied by the corresponding .LBL file
  -o FILE                Output file to save the resulting map in
 )";
@@ -104,6 +104,7 @@ try
     QString inFileName;
     QString outFileName;
     QString bgMapFileName;
+    double maxLatitude = 60*DEGREE;
 
     if(argc == 1)
         return usage(argv[0],1);
@@ -146,6 +147,11 @@ try
         {
             REQUIRE_PARAM();
             outputKmPerUnit = std::stod(argv[++n]);
+        }
+        else if(arg == "-l" || arg == "--max-lat")
+        {
+            REQUIRE_PARAM();
+            maxLatitude = std::stod(argv[++n])*DEGREE;
         }
         else if(arg == "-i")
         {
@@ -284,12 +290,12 @@ try
     for(unsigned j = 0; j < outputHeight; ++j)
     {
         const auto latitude = outputFirstLat + j*outputDeltaLat;
-        if(std::abs(latitude) > LAT_MAX + outputLatEpsilon)
+        if(std::abs(latitude) > maxLatitude + outputLatEpsilon)
             continue;
         for(unsigned i = 0; i < outputWidth; ++i)
         {
             const auto longitude = outputFirstLon + i*outputDeltaLon;
-            const auto value = sample(in, inputWidth, inputHeight, inputWidth, longitude, latitude);
+            const auto value = sample(in, inputWidth, inputHeight, inputWidth, longitude, latitude, maxLatitude);
             constexpr double inputReferenceRadius = 1737.4; // km
             constexpr double inputKmPerUnit = 1;
             const auto recenteredValue = value + inputReferenceRadius - outputReferenceRadius;

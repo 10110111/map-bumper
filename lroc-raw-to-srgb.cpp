@@ -77,8 +77,9 @@ const double* getSurroundingColor(const double*const data,
 int usage(const char* argv0, const int ret)
 {
     auto& s = ret ? std::cerr : std::cout;
-    s << "Usage: " << argv0 << "{options...} equirect-image.ext outDir";
+    s << "Usage: " << argv0 << "{options...} inDir sector outFile";
     s << R"(
+Here sector is a part of the input filenames denoting map sector, e.g. E350N0450.
 Options:
  -h, --help                 This help message
  --value-scale N            Scale albedo by N before saving as color

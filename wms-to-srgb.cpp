@@ -14,15 +14,33 @@ double sRGBTransferFunction(const double c)
 
 double wmsToRed(const double x)
 {
-    return 3.66897675367758 + x*(5.17181626686068 + x*(37.4567310735643 + x*(-66.1407972224146 + 36.9574791372878*x)));
+    const auto x2 = x*x;
+    const auto x4 = x2*x2;
+    const auto x8 = x4*x4;
+    const auto x16 = x8*x8;
+    const auto x32 = x16*x16;
+    const auto x48 = x32*x16;
+    return 3.55192315861786 + x*(6.56189433868235 + x*(31.7121712083171 + x*(-56.3543748015033 + x*(31.1809216095956 + 1.01475105374168*x48))));
 }
 double wmsToGreen(const double x)
 {
-    return 2.72459214650356 + x*(4.07386797773892 + x*(26.3036294920035 + x*(-44.8836716108057 + 25.0812660136267*x)));
+    const auto x2 = x*x;
+    const auto x4 = x2*x2;
+    const auto x8 = x4*x4;
+    const auto x16 = x8*x8;
+    const auto x32 = x16*x16;
+    const auto x48 = x32*x16;
+    return 2.60839445543049 + x*(5.45378170251246 + x*(20.6010742459879 + x*(-35.1688081878114 + x*(19.3469470742881 + 1.00733112382061*x48))));
 }
 double wmsToBlue(const double x)
 {
-    return 2.09428707617804 + x*(2.89641075271338 + x*(18.7590518760633 + x*(-29.7670405560604 + 16.4039924091487*x)));
+    const auto x2 = x*x;
+    const auto x4 = x2*x2;
+    const auto x8 = x4*x4;
+    const auto x16 = x8*x8;
+    const auto x32 = x16*x16;
+    const auto x48 = x32*x16;
+    return 1.98418672575485 + x*(4.20391508647678 + x*(13.3557316801473 + x*(-20.5619534557279 + x*(10.9705752833082 + 0.954472577730387*x48))));
 }
 
 int usage(const char* argv0, const int ret)

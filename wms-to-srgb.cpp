@@ -12,6 +12,63 @@ double sRGBTransferFunction(const double c)
         (1-s) *  12.92*c;
 }
 
+const float* getSurroundingColor(const float*const data,
+                                  const ssize_t width, const ssize_t height, const int bytesPerColor,
+                                  const ssize_t i0, const ssize_t j0)
+{
+    struct Color
+    {
+        float r,g,b;
+        Color() : r(0), g(0), b(0) {}
+        Color(const float* c) : r(c[0]), g(c[1]), b(c[2]) {}
+    };
+
+    static std::vector<Color> colors;
+    colors.clear();
+    static std::vector<ssize_t> radii;
+    radii.clear();
+    static constexpr int directions[][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,-1},{-1,1},{1,-1},
+                                            {2,1},{1,2},{-1,2},{-2,1},{-2,-1},{-1,-2},{1,-2},{2,-1}};
+    for(const auto dir : directions)
+    {
+        const double dirNorm = std::sqrt(dir[0]*dir[0]+dir[1]*dir[1]);
+        ssize_t radius = 0;
+        ssize_t i, j;
+        do
+        {
+            ++radius;
+            i = i0+radius*dir[0];
+            j = j0+radius*dir[1];
+            if(!(0 <= i && i < width && 0 <= j && j < height))
+                goto unusableDirection;
+            if(data[(j*width+i)*bytesPerColor+1] > 0)
+                break; // found a valid value
+        } while(true);
+        colors.emplace_back(data + ((j0+radius*dir[1])*width+(i0+radius*dir[0]))*bytesPerColor);
+        if(colors.back().g <= 0) radius = 0;
+        radii.push_back(radius * dirNorm);
+
+unusableDirection:
+        continue;
+    }
+
+    static Color out;
+    out = {};
+    double commonCoef = 0;
+    for(const auto r : radii)
+        commonCoef += 1. / r;
+    for(unsigned n = 0; n < colors.size(); ++n)
+    {
+        out.r += colors[n].r / radii[n];
+        out.g += colors[n].g / radii[n];
+        out.b += colors[n].b / radii[n];
+    }
+    out.r /= commonCoef;
+    out.g /= commonCoef;
+    out.b /= commonCoef;
+    return &out.r;
+}
+
 double wmsToRed(const double x)
 {
     const auto x2 = x*x;
@@ -71,6 +128,14 @@ try
     QString outFileName;
     constexpr double defaultScale = 105;
     double valueScale = 1 / defaultScale;
+    double badLevel = 65. / 255.;
+    enum class MarkBadMode
+    {
+        Magenta,
+        Surroundings,
+        None
+    };
+    MarkBadMode markBadMode = MarkBadMode::None;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -112,6 +177,19 @@ try
             GO_TO_PARAM();
             valueScale = std::stod(argv[n]) / defaultScale;
         }
+        else if(arg == "--bad-level")
+        {
+            GO_TO_PARAM();
+            badLevel = std::stod(argv[n]) / defaultScale / 255.;
+        }
+        else if(arg == "--fill-bad")
+        {
+            markBadMode = MarkBadMode::Surroundings;
+        }
+        else if(arg == "--bad-to-magenta")
+        {
+            markBadMode = MarkBadMode::Magenta;
+        }
         else
         {
             std::cerr << "Unknown switch " << argv[n] << "\n";
@@ -148,14 +226,78 @@ try
     for(size_t n = 0; n < out.size(); n += bytesPerColor)
     {
         const double v = data[n] / 255.;
-        out[n+0] = wmsToRed(v);
-        out[n+1] = wmsToGreen(v);
-        out[n+2] = wmsToBlue(v);
+        const bool good = v > badLevel;
+        if(good || markBadMode == MarkBadMode::None)
+        {
+            out[n+0] = wmsToRed(v);
+            out[n+1] = wmsToGreen(v);
+            out[n+2] = wmsToBlue(v);
+        }
+        else
+        {
+            // Mark with magenta
+            out[n+0] = 1 / valueScale;
+            out[n+1] = 0;
+            out[n+2] = 1 / valueScale;
+        }
+    }
+
+    if(markBadMode == MarkBadMode::Surroundings)
+    {
+        std::cerr << "Replacing bad pixels with some surrounding colors...\n";
+        for(ssize_t j = 0; j < height; ++j)
+        {
+            const ssize_t linePos = j*width;
+            for(ssize_t i = 0; i < width; ++i)
+            {
+                const auto pos = (linePos + i)*bytesPerColor;
+                if(out[pos+1] == 0)
+                {
+                    const auto*const surroundingColor = getSurroundingColor(out.data(), width, height, bytesPerColor, i, j);
+                    assert(surroundingColor);
+                    if(!surroundingColor) continue;
+                    // Mark fixed colors with a negative sign to prevent using them as surroundings.
+                    // The negativity will be removed by abs() when saving the image.
+                    out[pos+0] = -surroundingColor[0];
+                    out[pos+1] = -surroundingColor[1];
+                    out[pos+2] = -surroundingColor[2];
+                }
+            }
+        }
+        // Blur the replaced pixels a bit to better fit into the surroundings
+        for(ssize_t j = 0; j < height; ++j)
+        {
+            const ssize_t linePos = j*width;
+            for(ssize_t i = 0; i < width; ++i)
+            {
+                const auto pos = (linePos + i)*bytesPerColor;
+                if(out[pos+1] < 0)
+                {
+                    using std::abs;
+                    for(int c = 0; c < 3; ++c)
+                    {
+                        const auto left = std::max(i-1, ssize_t(0));
+                        const auto right = std::min(i+1, width-1);
+                        const auto top = std::max(j-1, ssize_t(0));
+                        const auto bottom = std::min(j+1, height-1);
+                        const auto B = bytesPerColor;
+                        out[pos+c] = abs(out[(top*width+left)*B+c]) + abs(out[(top*width+i)*B+c]) + abs(out[(top*width+right)*B+c])+
+                                     abs(out[((j+0)*width+left)*B+c]) + abs(out[((j+0)*width+i)*B+c]) + abs(out[((j+0)*width+right)*B+c])+
+                                     abs(out[(bottom*width+left)*B+c]) + abs(out[(bottom*width+i)*B+c]) + abs(out[(bottom*width+right)*B+c]);
+                        out[pos+c] /= 9;
+                    }
+                }
+            }
+        }
     }
 
     std::vector<uint8_t> outImgData(rowStride*height*bytesPerColor);
     for(size_t n = 0; n < out.size(); ++n)
         outImgData[n] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[n]) * valueScale, 0., 1.));
+
+    // Clear some RAM for the saving procedure
+    out.clear(); out.shrink_to_fit();
+
     const QImage outImg(outImgData.data(), width, height, rowStride*bytesPerColor, QImage::Format_RGB888);
     std::cerr << "Saving output file with dimensions " << width << " × " << height << "... ";
     if(!outImg.save(outFileName))

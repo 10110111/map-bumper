@@ -225,8 +225,9 @@ try
     std::vector<float> out(rowStride*height*bytesPerColor);
     for(size_t n = 0; n < out.size(); n += bytesPerColor)
     {
+        const auto j = n / img.bytesPerLine();
         const double v = data[n] / 255.;
-        const bool good = v > badLevel;
+        const bool good = v > badLevel || (1520+1300 < j && j < 1520+9570);
         if(good || markBadMode == MarkBadMode::None)
         {
             out[n+0] = wmsToRed(v);

@@ -144,7 +144,7 @@ try
     const ssize_t height = img.height();
 
     std::cerr << "Converting data to colors...\n";
-    std::vector<double> out(rowStride*height*bytesPerColor);
+    std::vector<float> out(rowStride*height*bytesPerColor);
     for(size_t n = 0; n < out.size(); n += bytesPerColor)
     {
         const double v = data[n] / 255.;

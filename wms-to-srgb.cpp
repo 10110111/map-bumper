@@ -65,6 +65,8 @@ Options:
 int main(int argc, char** argv)
 try
 {
+    setenv("QT_IMAGEIO_MAXALLOC","2048", false);
+
     QString inFileName;
     QString outFileName;
     constexpr double defaultScale = 105;

@@ -172,6 +172,12 @@ try
         std::cerr << "Sector not specified\n";
         return usage(argv[0], 1);
     }
+    if(sector.size() != 9)
+    {
+        std::cerr << "Sector should be 9 characters long, e.g. E350S0450\n";
+        return 1;
+    }
+    const bool isNorthSector = sector[4] == 'N';
     if(outFileName.empty())
     {
         std::cerr << "Output file name not specified\n";
@@ -219,6 +225,14 @@ try
         if(currWidth != width || currHeight != height || currRowStride != rowStride)
         {
             std::cerr << "Image dimensions or layout mismatch at " << filename << "\n";
+            return 1;
+        }
+
+        if((height % 2 == 1) != (sector[4] == 'N'))
+        {
+            std::cerr << "Unexpected height for a " << (isNorthSector ? "north" : "south")
+                      << " sector: expected " << (isNorthSector ? "odd" : "even")
+                      << ", but it is " << height << "\n";
             return 1;
         }
 
@@ -366,9 +380,16 @@ try
         }
     }
 
+    ssize_t skipDataAmount = 0;
+    if(isNorthSector)
+    {
+        --height;
+        skipDataAmount = rowStride * 3;
+    }
+
     std::vector<uint8_t> outImgData(rowStride*height*3);
-    for(size_t n = 0; n < out.size(); ++n)
-        outImgData[n] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[n]) * valueScale, 0., 1.));
+    for(size_t n = skipDataAmount; n < out.size(); ++n)
+        outImgData[n - skipDataAmount] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[n]) * valueScale, 0., 1.));
     const QImage outImg(outImgData.data(), width, height, rowStride*3, QImage::Format_RGB888);
     std::cerr << "Saving output file with dimensions " << width << " × " << height << "... ";
     if(!outImg.save(outFileName.c_str()))

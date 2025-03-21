@@ -128,7 +128,7 @@ try
     QString outFileName;
     constexpr double defaultScale = 105;
     double valueScale = 1 / defaultScale;
-    double badLevel = 65. / 255.;
+    double badLevel = 1. / 255.;
     enum class MarkBadMode
     {
         Magenta,

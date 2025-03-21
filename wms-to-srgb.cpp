@@ -229,7 +229,7 @@ try
         {
             const auto n = j*rowStride+i*bytesPerColor;
             const double v = data[n] / 255.;
-            const bool good = v > badLevel || (1520+1300 < j && j < 1520+9570);
+            const bool good = v > badLevel;
             if(good || markBadMode == MarkBadMode::None)
             {
                 out[n+0] = wmsToRed(v);

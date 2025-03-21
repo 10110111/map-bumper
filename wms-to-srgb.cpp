@@ -180,7 +180,7 @@ try
         else if(arg == "--bad-level")
         {
             GO_TO_PARAM();
-            badLevel = std::stod(argv[n]) / defaultScale / 255.;
+            badLevel = std::stod(argv[n]) / 255.;
         }
         else if(arg == "--fill-bad")
         {

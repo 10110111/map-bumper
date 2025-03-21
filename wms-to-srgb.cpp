@@ -12,9 +12,9 @@ double sRGBTransferFunction(const double c)
         (1-s) *  12.92*c;
 }
 
-const float* getSurroundingColor(const float*const data,
-                                  const ssize_t width, const ssize_t height, const int bytesPerColor,
-                                  const ssize_t i0, const ssize_t j0)
+const float* getSurroundingColor(const float*const data, const ssize_t width, const ssize_t height,
+                                 const ssize_t rowStride, const int bytesPerColor,
+                                 const ssize_t i0, const ssize_t j0)
 {
     struct Color
     {
@@ -41,10 +41,10 @@ const float* getSurroundingColor(const float*const data,
             j = j0+radius*dir[1];
             if(!(0 <= i && i < width && 0 <= j && j < height))
                 goto unusableDirection;
-            if(data[(j*width+i)*bytesPerColor+1] > 0)
+            if(data[j*rowStride+i*bytesPerColor+1] > 0)
                 break; // found a valid value
         } while(true);
-        colors.emplace_back(data + ((j0+radius*dir[1])*width+(i0+radius*dir[0]))*bytesPerColor);
+        colors.emplace_back(data + (j0+radius*dir[1])*rowStride+(i0+radius*dir[0])*bytesPerColor);
         if(colors.back().g <= 0) radius = 0;
         radii.push_back(radius * dirNorm);
 
@@ -217,29 +217,32 @@ try
     img = img.convertToFormat(QImage::Format_RGB888);
     const uchar*const data = img.bits();
     constexpr int bytesPerColor = 3;
-    const ssize_t rowStride = img.bytesPerLine() / bytesPerColor;
+    const ssize_t rowStride = img.bytesPerLine();
     const ssize_t width = img.width();
     const ssize_t height = img.height();
 
     std::cerr << "Converting data to colors...\n";
-    std::vector<float> out(rowStride*height*bytesPerColor);
-    for(size_t n = 0; n < out.size(); n += bytesPerColor)
+    std::vector<float> out(rowStride*height);
+    for(ssize_t j = 0; j < height; ++j)
     {
-        const auto j = n / img.bytesPerLine();
-        const double v = data[n] / 255.;
-        const bool good = v > badLevel || (1520+1300 < j && j < 1520+9570);
-        if(good || markBadMode == MarkBadMode::None)
+        for(ssize_t i = 0; i < width; ++i)
         {
-            out[n+0] = wmsToRed(v);
-            out[n+1] = wmsToGreen(v);
-            out[n+2] = wmsToBlue(v);
-        }
-        else
-        {
-            // Mark with magenta
-            out[n+0] = 1 / valueScale;
-            out[n+1] = 0;
-            out[n+2] = 1 / valueScale;
+            const auto n = j*rowStride+i*bytesPerColor;
+            const double v = data[n] / 255.;
+            const bool good = v > badLevel || (1520+1300 < j && j < 1520+9570);
+            if(good || markBadMode == MarkBadMode::None)
+            {
+                out[n+0] = wmsToRed(v);
+                out[n+1] = wmsToGreen(v);
+                out[n+2] = wmsToBlue(v);
+            }
+            else
+            {
+                // Mark with magenta
+                out[n+0] = 1 / valueScale;
+                out[n+1] = 0;
+                out[n+2] = 1 / valueScale;
+            }
         }
     }
 
@@ -248,13 +251,13 @@ try
         std::cerr << "Replacing bad pixels with some surrounding colors...\n";
         for(ssize_t j = 0; j < height; ++j)
         {
-            const ssize_t linePos = j*width;
+            const ssize_t linePos = j*rowStride;
             for(ssize_t i = 0; i < width; ++i)
             {
-                const auto pos = (linePos + i)*bytesPerColor;
+                const auto pos = linePos + i*bytesPerColor;
                 if(out[pos+1] == 0)
                 {
-                    const auto*const surroundingColor = getSurroundingColor(out.data(), width, height, bytesPerColor, i, j);
+                    const auto*const surroundingColor = getSurroundingColor(out.data(), width, height, rowStride, bytesPerColor, i, j);
                     assert(surroundingColor);
                     if(!surroundingColor) continue;
                     // Mark fixed colors with a negative sign to prevent using them as surroundings.
@@ -268,10 +271,10 @@ try
         // Blur the replaced pixels a bit to better fit into the surroundings
         for(ssize_t j = 0; j < height; ++j)
         {
-            const ssize_t linePos = j*width;
+            const ssize_t linePos = j*rowStride;
             for(ssize_t i = 0; i < width; ++i)
             {
-                const auto pos = (linePos + i)*bytesPerColor;
+                const auto pos = linePos + i*bytesPerColor;
                 if(out[pos+1] < 0)
                 {
                     using std::abs;
@@ -282,9 +285,9 @@ try
                         const auto top = std::max(j-1, ssize_t(0));
                         const auto bottom = std::min(j+1, height-1);
                         const auto B = bytesPerColor;
-                        out[pos+c] = abs(out[(top*width+left)*B+c]) + abs(out[(top*width+i)*B+c]) + abs(out[(top*width+right)*B+c])+
-                                     abs(out[((j+0)*width+left)*B+c]) + abs(out[((j+0)*width+i)*B+c]) + abs(out[((j+0)*width+right)*B+c])+
-                                     abs(out[(bottom*width+left)*B+c]) + abs(out[(bottom*width+i)*B+c]) + abs(out[(bottom*width+right)*B+c]);
+                        out[pos+c] = abs(out[top*rowStride+left*B+c]) + abs(out[top*rowStride+i*B+c]) + abs(out[top*rowStride+right*B+c])+
+                                     abs(out[(j+0)*rowStride+left*B+c]) + abs(out[(j+0)*rowStride+i*B+c]) + abs(out[(j+0)*rowStride+right*B+c])+
+                                     abs(out[bottom*rowStride+left*B+c]) + abs(out[bottom*rowStride+i*B+c]) + abs(out[bottom*rowStride+right*B+c]);
                         out[pos+c] /= 9;
                     }
                 }
@@ -292,14 +295,14 @@ try
         }
     }
 
-    std::vector<uint8_t> outImgData(rowStride*height*bytesPerColor);
+    std::vector<uint8_t> outImgData(rowStride*height);
     for(size_t n = 0; n < out.size(); ++n)
         outImgData[n] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[n]) * valueScale, 0., 1.));
 
     // Clear some RAM for the saving procedure
     out.clear(); out.shrink_to_fit();
 
-    const QImage outImg(outImgData.data(), width, height, rowStride*bytesPerColor, QImage::Format_RGB888);
+    const QImage outImg(outImgData.data(), width, height, rowStride, QImage::Format_RGB888);
     std::cerr << "Saving output file with dimensions " << width << " × " << height << "... ";
     if(!outImg.save(outFileName))
     {

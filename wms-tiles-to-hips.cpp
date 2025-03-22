@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <QCryptographicHash>
+#include <QImageReader>
 #include <QPainter>
 #include <QImage>
 #include <QDir>
@@ -48,6 +49,52 @@ double sample(T const* data, const size_t width, const size_t height,
 
     const auto y = (latitude - firstLat) / deltaLat;
     const auto floorY = std::floor(y);
+
+    const auto pTopLeft     = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY);
+    const auto pTopRight    = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY);
+    const auto pBottomLeft  = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY+1);
+    const auto pBottomRight = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY+1);
+
+    const auto badLevelLow = 2. / 255.;
+    const auto badLevelHigh = 253. / 255.;
+    const bool bad = pTopLeft < badLevelLow || pTopRight < badLevelLow || pBottomLeft < badLevelLow || pBottomRight < badLevelLow ||
+                     pTopLeft >= badLevelHigh || pTopRight >= badLevelHigh || pBottomLeft >= badLevelHigh || pBottomRight >= badLevelHigh;
+
+    const auto fracX = x - floorX;
+    const auto fracY = y - floorY;
+
+    const auto sampleLeft  = pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
+    const auto sampleRight = pTopRight + (pBottomRight-pTopRight)*fracY;
+
+    const auto value = sampleLeft + (sampleRight-sampleLeft)*fracX;
+    return bad ? -value : value;
+}
+
+template<typename T>
+double sampleLROC(T const* data, const size_t width, const size_t height,
+                  const size_t rowStride, const size_t yMin, const size_t yMax,
+                  const size_t channelsPerPixel, const size_t subpixelIndex,
+                  const double longitude, const double latitude)
+{
+    assert(-M_PI <= longitude && longitude <= M_PI);
+    assert(-M_PI/2 <= latitude && latitude <= M_PI/2);
+
+    const auto deltaLon = 2.*M_PI/width;
+    const auto firstLon = (1.-width)/2. * deltaLon;
+
+    const auto x = (longitude - firstLon) / deltaLon;
+    const auto floorX = std::floor(x);
+
+    const auto deltaLat = -M_PI/(height*90/70);
+    const auto firstLat = (1.-height*90/70)/2. * deltaLat;
+
+    auto y = (latitude - firstLat) / deltaLat;
+    auto floorY = std::floor(y);
+
+    if(floorY < yMin || floorY+1 >= yMax) return -1;
+
+    y      -= yMin;
+    floorY -= yMin;
 
     const auto pTopLeft     = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY);
     const auto pTopRight    = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY);
@@ -105,6 +152,14 @@ double sRGBTransferFunction(const double c)
         (1-s) *  12.92*c;
 }
 
+double sRGBInverseTransferFunction(const double srgb)
+{
+	const auto s = step(0.04045, srgb);
+	const auto d = 1. - s;
+	return s * pow((srgb+0.055)/1.055, float(2.4)) +
+	       d * srgb/12.92;
+}
+
 double wmsToRed(const double x)
 {
     const auto x2 = x*x;
@@ -138,11 +193,15 @@ double wmsToBlue(const double x)
 
 void fillFace(const int order, const int pix, const uint8_t* data,
               const ssize_t width, const ssize_t height, const ssize_t rowStride,
-              const ssize_t channelsPerPixel, const double valueScale, double* outData)
+              const ssize_t channelsPerPixel, const double valueScale,
+              const QImage& lrocColorRef, const size_t refYMin, const size_t refYMax,
+              double* outData)
 {
     const unsigned nside = 1u << order;
     int ix, iy, face;
     healpix_nest2xyf(nside, pix, &ix, &iy, &face);
+
+    const auto& ref = lrocColorRef;
 
     for(int y = 0; y < HIPS_TILE_SIZE; ++y)
     {
@@ -162,14 +221,40 @@ void fillFace(const int order, const int pix, const uint8_t* data,
             const int i = y, j = x;
 
             const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
-            const auto samp = sample(data, width, height, rowStride, 1,
-                                     0, longitude, latitude);
-            const double red   = wmsToRed(samp);
-            const double green = wmsToGreen(samp);
-            const double blue  = wmsToBlue(samp);
-            outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red   * valueScale, 0., 1.));
-            outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green * valueScale, 0., 1.));
-            outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue  * valueScale, 0., 1.));
+            const auto samp = sample(data, width, height, rowStride, 1, 0, longitude, latitude);
+            const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
+            const auto refGsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 1, longitude, latitude);
+            const auto refBsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 2, longitude, latitude);
+            const auto refR = sRGBInverseTransferFunction(refRsRGB);
+            const auto refG = sRGBInverseTransferFunction(refGsRGB);
+            const auto refB = sRGBInverseTransferFunction(refBsRGB);
+            const double red   = wmsToRed(std::abs(samp));
+            const double green = wmsToGreen(std::abs(samp));
+            const double blue  = wmsToBlue(std::abs(samp));
+            if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
+            {
+                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red   * valueScale, 0., 1.));
+                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green * valueScale, 0., 1.));
+                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue  * valueScale, 0., 1.));
+            }
+            else if(samp < 0)
+            {
+                outData[pixelPosInOutData + 0] = refRsRGB;
+                outData[pixelPosInOutData + 1] = refGsRGB;
+                outData[pixelPosInOutData + 2] = refBsRGB;
+            }
+            else
+            {
+                const auto R = red, G = green, B = blue;
+                const auto I = R+G+B;
+                const auto refI = refR+refG+refB;
+                const auto rRef = refR/refI, gRef = refG/refI, bRef = refB/refI;
+                // TODO: adjust I so that the average of the current 4×4 cell is the
+                // same as that of the corresponding pixel of the reference image.
+                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(rRef * I * valueScale, 0., 1.));
+                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(gRef * I * valueScale, 0., 1.));
+                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(bRef * I * valueScale, 0., 1.));
+            }
         }
     }
 }
@@ -297,6 +382,7 @@ int usage(const char* argv0, const int ret)
 Options:
  -h, --help                 This help message
  --value-scale N            Scale albedo by N before saving as color
+ --lroc-image filename.ext  Use a LROC-derived sRGB 27360×10640 image filename.ext to correct colors
  --format FORMAT            Set hips_tile_format to FORMAT (only one value is supported)
  --title TITLE              Set obs_title to TITLE
  --type TYPE                Set type (a non-standard property) to TYPE
@@ -329,6 +415,7 @@ try
     ColorChannel colorChannel = ColorChannel::Green;
     constexpr double defaultScale = 105;
     double valueScale = 1 / defaultScale;
+    QString lrocSRGBFileName;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -415,6 +502,11 @@ try
             GO_TO_PARAM();
             valueScale = std::stod(argv[n]) / defaultScale;
         }
+        else if(arg == "--lroc-image")
+        {
+            GO_TO_PARAM();
+            lrocSRGBFileName = argv[n];
+        }
         else if(arg == "--red")
         {
             colorChannel = ColorChannel::Red;
@@ -443,6 +535,11 @@ try
         std::cerr << "Output directory not specified\n";
         return usage(argv[0], 1);
     }
+    if(lrocSRGBFileName.isEmpty())
+    {
+        std::cerr << "LROC-derived sRGB image not specified\n";
+        return 1;
+    }
 
     QString finalExt;
     if(imgFormat == "jpeg")
@@ -460,6 +557,16 @@ try
     constexpr ssize_t height = inputTileHeight * tileCountVert;
     constexpr ssize_t width = inputTileWidth * tileCountHoriz;
     std::unique_ptr<uint8_t[]> bigData(new uint8_t[height*width]);
+    std::cerr << "done\n";
+
+    std::cerr << "Loading LROC-derived sRGB image... ";
+    QImageReader reader(lrocSRGBFileName);
+    auto lrocImg = reader.read();
+    if(lrocImg.isNull())
+        throw std::runtime_error(("Failed to load image \""+lrocSRGBFileName+"\": "+reader.errorString()).toStdString());
+    lrocImg = lrocImg.convertToFormat(QImage::Format_RGB888);
+    if(lrocImg.isNull())
+        throw std::runtime_error("Failed to convert the LROC-derived sRGB image to the working format");
     std::cerr << "done\n";
 
     std::cerr << "Loading input images...\n";
@@ -502,18 +609,20 @@ try
         std::atomic_int numThreadsReportedFirstProgress{0};
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
-        auto work = [absolutePixMax,orderMax,outDir,startTime,
+        auto work = [absolutePixMax,orderMax,outDir,startTime,lrocImg,
                      &bigData = std::as_const(bigData),colorChannel, valueScale,
                      &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
         {
             constexpr int channelsPerPixel = 3;
             std::vector<double> data(HIPS_TILE_SIZE * HIPS_TILE_SIZE * channelsPerPixel);
+            const size_t refYmin = (lrocImg.height()*90/70 - lrocImg.height()) / 2;
+            const size_t refYmax = lrocImg.height()*90/70 - refYmin;
 
             auto time0 = std::chrono::steady_clock::now();
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
             for(int pix = pixMin; pix < pixMax; ++pix)
             {
-                fillFace(orderMax, pix, bigData.get(), width, height, width, channelsPerPixel, valueScale, data.data());
+                fillFace(orderMax, pix, bigData.get(), width, height, width, channelsPerPixel, valueScale, lrocImg, refYmin, refYmax, data.data());
 
                 using OutType = uchar;
                 std::vector<OutType> outBits;

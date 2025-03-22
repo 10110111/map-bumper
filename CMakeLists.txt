@@ -25,6 +25,9 @@ target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 add_executable(equirect2hips equirect2hips.cpp healpix.cpp)
 target_link_libraries(equirect2hips Qt6::Core Qt6::Gui)
 
+add_executable(wms-tiles-to-hips wms-tiles-to-hips.cpp healpix.cpp)
+target_link_libraries(wms-tiles-to-hips Qt6::Core Qt6::Gui)
+
 add_executable(heightmap2normalmap heightmap2normalmap.cpp)
 target_link_libraries(heightmap2normalmap Qt6::Core Qt6::Gui)
 

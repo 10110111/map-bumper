@@ -195,13 +195,14 @@ void fillFace(const int order, const int pix, const uint8_t* data,
               const ssize_t width, const ssize_t height, const ssize_t rowStride,
               const ssize_t channelsPerPixel, const double valueScale,
               const QImage& lrocColorRef, const size_t refYMin, const size_t refYMax,
-              double* outData)
+              const QImage& smallerImg, double* outData)
 {
     const unsigned nside = 1u << order;
     int ix, iy, face;
     healpix_nest2xyf(nside, pix, &ix, &iy, &face);
 
     const auto& ref = lrocColorRef;
+    const auto& small = smallerImg;
 
     for(int y = 0; y < HIPS_TILE_SIZE; ++y)
     {
@@ -222,12 +223,16 @@ void fillFace(const int order, const int pix, const uint8_t* data,
 
             const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
             const auto samp = sample(data, width, height, rowStride, 1, 0, longitude, latitude);
+            const auto sampSm = sample(small.bits(), small.width(), small.height(), small.bytesPerLine(), 1, 0, longitude, latitude);
             const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
             const auto refGsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 1, longitude, latitude);
             const auto refBsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 2, longitude, latitude);
             const auto refR = sRGBInverseTransferFunction(refRsRGB);
             const auto refG = sRGBInverseTransferFunction(refGsRGB);
             const auto refB = sRGBInverseTransferFunction(refBsRGB);
+            const double smallR = wmsToRed(std::abs(sampSm));
+            const double smallG = wmsToGreen(std::abs(sampSm));
+            const double smallB = wmsToBlue(std::abs(sampSm));
             const double red   = wmsToRed(std::abs(samp));
             const double green = wmsToGreen(std::abs(samp));
             const double blue  = wmsToBlue(std::abs(samp));
@@ -246,14 +251,15 @@ void fillFace(const int order, const int pix, const uint8_t* data,
             else
             {
                 const auto R = red, G = green, B = blue;
-                const auto I = R+G+B;
                 const auto refI = refR+refG+refB;
+                const auto smallI = smallR+smallG+smallB;
+                const auto I = (R+G+B) * refI / smallI;
                 const auto rRef = refR/refI, gRef = refG/refI, bRef = refB/refI;
                 // TODO: adjust I so that the average of the current 4×4 cell is the
                 // same as that of the corresponding pixel of the reference image.
-                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(rRef * I * valueScale, 0., 1.));
-                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(gRef * I * valueScale, 0., 1.));
-                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(bRef * I * valueScale, 0., 1.));
+                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(rRef * I, 0., 1.));
+                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(gRef * I, 0., 1.));
+                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(bRef * I, 0., 1.));
             }
         }
     }
@@ -383,6 +389,8 @@ Options:
  -h, --help                 This help message
  --value-scale N            Scale albedo by N before saving as color
  --lroc-image filename.ext  Use a LROC-derived sRGB 27360×10640 image filename.ext to correct colors
+ --small-data filename.ext  Use a reduced-resolution version of the input map for correction
+                             of brightness (used together with the --lroc-image map)
  --format FORMAT            Set hips_tile_format to FORMAT (only one value is supported)
  --title TITLE              Set obs_title to TITLE
  --type TYPE                Set type (a non-standard property) to TYPE
@@ -416,6 +424,7 @@ try
     constexpr double defaultScale = 105;
     double valueScale = 1 / defaultScale;
     QString lrocSRGBFileName;
+    QString smallerImgFileName;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -507,6 +516,11 @@ try
             GO_TO_PARAM();
             lrocSRGBFileName = argv[n];
         }
+        else if(arg == "--small-data")
+        {
+            GO_TO_PARAM();
+            smallerImgFileName = argv[n];
+        }
         else if(arg == "--red")
         {
             colorChannel = ColorChannel::Red;
@@ -540,6 +554,11 @@ try
         std::cerr << "LROC-derived sRGB image not specified\n";
         return 1;
     }
+    if(smallerImgFileName.isEmpty())
+    {
+        std::cerr << "Reduced-resolution map not specified\n";
+        return 1;
+    }
 
     QString finalExt;
     if(imgFormat == "jpeg")
@@ -559,11 +578,19 @@ try
     std::unique_ptr<uint8_t[]> bigData(new uint8_t[height*width]);
     std::cerr << "done\n";
 
+    std::cerr << "Loading the reduced-resolution map... ";
+    QImage smallerImg(smallerImgFileName);
+    if(smallerImg.isNull())
+        throw std::runtime_error(("Failed to load image \""+smallerImgFileName+"\"").toStdString());
+    smallerImg = smallerImg.convertToFormat(QImage::Format_Grayscale8);
+    if(smallerImg.isNull())
+        throw std::runtime_error("Failed to convert the reduced-resolution map to the working format");
+    std::cerr << "done\n";
+
     std::cerr << "Loading LROC-derived sRGB image... ";
-    QImageReader reader(lrocSRGBFileName);
-    auto lrocImg = reader.read();
+    QImage lrocImg(lrocSRGBFileName);
     if(lrocImg.isNull())
-        throw std::runtime_error(("Failed to load image \""+lrocSRGBFileName+"\": "+reader.errorString()).toStdString());
+        throw std::runtime_error(("Failed to load image \""+lrocSRGBFileName+"\"").toStdString());
     lrocImg = lrocImg.convertToFormat(QImage::Format_RGB888);
     if(lrocImg.isNull())
         throw std::runtime_error("Failed to convert the LROC-derived sRGB image to the working format");
@@ -609,7 +636,7 @@ try
         std::atomic_int numThreadsReportedFirstProgress{0};
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
-        auto work = [absolutePixMax,orderMax,outDir,startTime,lrocImg,
+        auto work = [absolutePixMax,orderMax,outDir,startTime,lrocImg,smallerImg,
                      &bigData = std::as_const(bigData),colorChannel, valueScale,
                      &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
         {
@@ -622,7 +649,8 @@ try
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
             for(int pix = pixMin; pix < pixMax; ++pix)
             {
-                fillFace(orderMax, pix, bigData.get(), width, height, width, channelsPerPixel, valueScale, lrocImg, refYmin, refYmax, data.data());
+                fillFace(orderMax, pix, bigData.get(), width, height, width, channelsPerPixel,
+                         valueScale, lrocImg, refYmin, refYmax, smallerImg, data.data());
 
                 using OutType = uchar;
                 std::vector<OutType> outBits;

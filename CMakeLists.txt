@@ -37,6 +37,9 @@ target_link_libraries(heightmap2horizonmap Qt6::Core Qt6::Gui)
 add_executable(lroc-raw-to-srgb lroc-raw-to-srgb.cpp)
 target_link_libraries(lroc-raw-to-srgb Qt6::Core Qt6::Gui)
 
+add_executable(lroc-emp-to-srgb lroc-emp-to-srgb.cpp)
+target_link_libraries(lroc-emp-to-srgb Qt6::Core Qt6::Gui)
+
 add_executable(wms-to-srgb wms-to-srgb.cpp)
 target_link_libraries(wms-to-srgb Qt6::Core Qt6::Gui)
 

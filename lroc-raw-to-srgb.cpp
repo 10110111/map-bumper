@@ -340,16 +340,15 @@ try
             for(ssize_t i = 0; i < width; ++i)
             {
                 const auto pos = (linePos + i)*bytesPerColor;
-                if(out[pos+1] == 0)
+                if(out[pos+std::min(1,bytesPerColor-1)] == 0)
                 {
                     const auto*const surroundingColor = getSurroundingColor(out.data(), width, height, bytesPerColor, i, j);
                     assert(surroundingColor);
                     if(!surroundingColor) continue;
                     // Mark fixed colors with a negative sign to prevent using them as surroundings.
                     // The negativity will be removed by abs() when saving the image.
-                    out[pos+0] = -surroundingColor[0];
-                    out[pos+1] = -surroundingColor[1];
-                    out[pos+2] = -surroundingColor[2];
+                    for(int c = 0; c < bytesPerColor; ++c)
+                        out[pos+c] = -surroundingColor[c];
                 }
             }
         }
@@ -360,10 +359,10 @@ try
             for(ssize_t i = 0; i < width; ++i)
             {
                 const auto pos = (linePos + i)*bytesPerColor;
-                if(out[pos+1] < 0)
+                if(out[pos+std::min(1,bytesPerColor-1)] < 0)
                 {
                     using std::abs;
-                    for(int c = 0; c < 3; ++c)
+                    for(int c = 0; c < bytesPerColor; ++c)
                     {
                         const auto left = std::max(i-1, ssize_t(0));
                         const auto right = std::min(i+1, width-1);

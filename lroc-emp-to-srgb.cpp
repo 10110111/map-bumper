@@ -5,6 +5,46 @@
 #include <QByteArray>
 #include <QRegularExpression>
 
+template<typename T>
+double fetch(T const* data, const ssize_t width, const ssize_t height,
+             const size_t rowStride, const size_t channelsPerPixel,
+             const size_t subpixelIndex, const ssize_t requestedX, const ssize_t requestedY)
+{
+    const auto x = std::clamp(requestedX, ssize_t(0), width);
+    const auto y = std::clamp(requestedY, ssize_t(0), height-1);
+
+    const auto rawValue = data[x*channelsPerPixel + subpixelIndex + y*rowStride];
+
+    if(std::is_integral_v<T> && std::is_unsigned_v<T>)
+        return static_cast<double>(rawValue) / std::numeric_limits<T>::max();
+    if(std::is_integral_v<T> && std::is_signed_v<T>)
+        return static_cast<double>(rawValue) / -std::numeric_limits<T>::min();
+    if(std::is_floating_point_v<T>)
+        return rawValue;
+}
+
+template<typename T>
+double sample(T const* data, const size_t width, const size_t height,
+              const size_t rowStride, const size_t channelsPerPixel,
+              const size_t subpixelIndex, const double x, const double y)
+{
+    const auto floorX = std::floor(x);
+    const auto floorY = std::floor(y);
+
+    const auto pTopLeft     = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY);
+    const auto pTopRight    = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY);
+    const auto pBottomLeft  = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY+1);
+    const auto pBottomRight = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY+1);
+
+    const auto fracX = x - floorX;
+    const auto fracY = y - floorY;
+
+    const auto sampleLeft  = pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
+    const auto sampleRight = pTopRight + (pBottomRight-pTopRight)*fracY;
+
+    return sampleLeft + (sampleRight-sampleLeft)*fracX;
+}
+
 template<typename T> T step(T edge, T x) { return x<edge ? 0 : 1; }
 double sRGBTransferFunction(const double c)
 {
@@ -85,8 +125,18 @@ Options:
  --value-scale N            Scale albedo by N before saving as color
  --bad-to-black             Fill bad pixels with black
  --fill-bad                 Fill bad pixels with surrounding colors
+ --polar-to-equirect        Convert polar image data to equirectangular projection
 )";
     return ret;
+}
+
+std::pair<double/*x*/,double/*y*/> latLonToStereoPoint(const double longitude, const double latitude)
+{
+    const auto sinLat = std::sin(std::abs(latitude));
+    const auto R = std::sqrt((1-sinLat)/(1+sinLat));
+    auto x = std::sin(longitude);
+    auto y = std::cos(longitude);
+    return {x*R, y*R};
 }
 
 int main(int argc, char** argv)
@@ -104,6 +154,7 @@ try
         None
     };
     MarkBadMode markBadMode = MarkBadMode::None;
+    bool polarToEquirect = false;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -156,6 +207,10 @@ try
         {
             markBadMode = MarkBadMode::Black;
         }
+        else if(arg == "--polar-to-equirect")
+        {
+            polarToEquirect = true;
+        }
         else
         {
             std::cerr << "Unknown switch " << argv[n] << "\n";
@@ -182,6 +237,9 @@ try
         std::cerr << "Output file name not specified\n";
         return usage(argv[0], 1);
     }
+
+    const bool isPolar = sector[0] == 'P';
+    const bool isNorth = isPolar && sector[4] == 'N';
 
     std::cerr << "Reading input data...\n";
     constexpr int wavelength = 643;
@@ -216,15 +274,15 @@ try
         return 1;
     }
 
-    const ssize_t width = QRegularExpression("SAMPLE_LAST_PIXEL\\s*=\\s*([0-9]+)\\b").match(header).captured(1).toUInt();
-    const ssize_t height= QRegularExpression("LINE_LAST_PIXEL\\s*=\\s*([0-9]+)\\b").match(header).captured(1).toUInt();
+    ssize_t width = QRegularExpression("SAMPLE_LAST_PIXEL\\s*=\\s*([0-9]+)\\b").match(header).captured(1).toUInt();
+    ssize_t height= QRegularExpression("LINE_LAST_PIXEL\\s*=\\s*([0-9]+)\\b").match(header).captured(1).toUInt();
     if(width==0 || height==0)
     {
         std::cerr << "Failed to find image dimensions\n";
         return 1;
     }
 
-    const auto rowStride = width;
+    auto rowStride = width;
     std::vector<float> data(rowStride*height);
     const qint64 sizeToRead = data.size() * sizeof data[0];
     if(file.read(reinterpret_cast<char*>(data.data()), sizeToRead) != sizeToRead)
@@ -235,19 +293,67 @@ try
     }
 
     std::cerr << "Converting data to colors...\n";
-    std::vector<float> out(rowStride*height);
-    for(size_t n = 0; n < data.size(); ++n)
+    std::vector<float> out;
+    if(polarToEquirect && isPolar)
     {
-        bool good = true;
-        const auto value = data[n];
-        if(value <= 0 || !std::isfinite(value))
-            good = false;
-        if(good || markBadMode == MarkBadMode::None)
-            out[n] = value;
-        else if(markBadMode == MarkBadMode::Black)
-            out[n] = 0;
-        else
-            out[n] = -1;
+        if(width % 2 != 1)
+        {
+            std::cerr << "Unexpected width of a polar image: should be odd, but is " << width << "\n";
+            return 1;
+        }
+        if(width != height)
+        {
+            std::cerr << "Polar image should have width==height, but the dimensions are " << width << "×" << height << "\n";
+            return 1;
+        }
+        const auto inputWidth = width, inputHeight = height;
+
+        // Top and left edges contain a useless row (resp. column) that should be skipped.
+        const ssize_t totalRadius = (width - 1) / 2;
+        width = 27360 * 4; // Total width of the equirectangular data in -60°..60° region
+        rowStride = width;
+        const auto totalMapHeight = width / 2;
+        height = totalMapHeight / 2 * 30/90; // Northern/Southern ±30°..±90° region
+
+        // Maximum radius of the stereographic projection of a point on a unit sphere at a latitude of 60°
+        const auto maxR = 2-std::sqrt(3.);
+
+        out.resize(rowStride*height);
+        for(ssize_t j = 0; j < height; ++j)
+        {
+            const auto latitude = isNorth ? M_PI/2 - M_PI/6*(j+0.5)/height
+                                          : M_PI/2 - M_PI/6*(height-(j+0.5))/height;
+            for(ssize_t i = 0; i < width; ++i)
+            {
+                const auto longitude = isNorth ? -M_PI + 2*M_PI*(i+0.5)/width
+                                               : -2*M_PI*(i+0.5)/width;
+                const auto [x,y] = latLonToStereoPoint(longitude, latitude);
+                // Top and left edges contain a useless row (resp. column) that should be skipped, this is where the 1 are from.
+                const auto inputImgI = x * totalRadius / maxR + totalRadius + 1 + 0.5;
+                const auto inputImgJ = y * totalRadius / maxR + totalRadius + 1 + 0.5;
+
+                const auto v = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ);
+
+                out[j*rowStride+i] = v;
+            }
+        }
+    }
+    else
+    {
+        out.resize(rowStride*height);
+        for(size_t n = 0; n < data.size(); ++n)
+        {
+            bool good = true;
+            const auto value = data[n];
+            if(value <= 0 || !std::isfinite(value))
+                good = false;
+            if(good || markBadMode == MarkBadMode::None)
+                out[n] = value;
+            else if(markBadMode == MarkBadMode::Black)
+                out[n] = 0;
+            else
+                out[n] = -1;
+        }
     }
 
     if(markBadMode == MarkBadMode::Surroundings)
@@ -299,7 +405,7 @@ try
         outImgData[n] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[n]) * valueScale, 0., 1.));
     const QImage outImg(outImgData.data(), width, height, rowStride, QImage::Format_Grayscale8);
     std::cerr << "Saving output file with dimensions " << width << " × " << height << "... ";
-    if(!outImg.save(outFileName.c_str()))
+    if(!outImg.save(outFileName.c_str(), nullptr, 100))
     {
         std::cerr << "Failed to save output file " << outFileName << "\n";
         return 1;

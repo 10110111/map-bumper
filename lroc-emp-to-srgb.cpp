@@ -332,9 +332,17 @@ try
                 const auto inputImgI = x * totalRadius / maxR + totalRadius + 1 + 0.5;
                 const auto inputImgJ = y * totalRadius / maxR + totalRadius + 1 + 0.5;
 
-                const auto v = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ);
+                const auto value = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ);
 
-                out[j*rowStride+i] = v;
+                bool good = true;
+                if(value <= 0 || !std::isfinite(value))
+                    good = false;
+                if(good || markBadMode == MarkBadMode::None)
+                    out[j*rowStride+i] = value;
+                else if(markBadMode == MarkBadMode::Black)
+                    out[j*rowStride+i] = 0;
+                else
+                    out[j*rowStride+i] = -1;
             }
         }
     }

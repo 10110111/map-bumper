@@ -5,6 +5,11 @@
 #include <QByteArray>
 #include <QRegularExpression>
 
+bool isBad(const double value)
+{
+    return value <= 0 || !std::isfinite(value);
+}
+
 template<typename T>
 double fetch(T const* data, const ssize_t width, const ssize_t height,
              const size_t rowStride, const size_t channelsPerPixel,
@@ -26,7 +31,8 @@ double fetch(T const* data, const ssize_t width, const ssize_t height,
 template<typename T>
 double sample(T const* data, const size_t width, const size_t height,
               const size_t rowStride, const size_t channelsPerPixel,
-              const size_t subpixelIndex, const double x, const double y)
+              const size_t subpixelIndex, const double x, const double y,
+              bool skipBad)
 {
     const auto floorX = std::floor(x);
     const auto floorY = std::floor(y);
@@ -39,8 +45,10 @@ double sample(T const* data, const size_t width, const size_t height,
     const auto fracX = x - floorX;
     const auto fracY = y - floorY;
 
-    const auto sampleLeft  = pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
-    const auto sampleRight = pTopRight + (pBottomRight-pTopRight)*fracY;
+    const auto sampleLeft  = skipBad && isBad(pTopLeft) ? pBottomLeft : skipBad && isBad(pBottomLeft) ? pTopLeft : pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
+    const auto sampleRight = skipBad && isBad(pTopRight)? pBottomRight: skipBad && isBad(pBottomRight)? pTopRight: pTopRight + (pBottomRight-pTopRight)*fracY;
+    if(skipBad && isBad(sampleLeft)) return sampleRight;
+    if(skipBad && isBad(sampleRight)) return sampleLeft;
 
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
@@ -332,10 +340,11 @@ try
                 const auto inputImgI = x * totalRadius / maxR + totalRadius + 1 + 0.5;
                 const auto inputImgJ = y * totalRadius / maxR + totalRadius + 1 + 0.5;
 
-                const auto value = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ);
+                const bool finalLines = isNorth ? j+2>=height : j<2;
+                const auto value = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ, finalLines);
 
                 bool good = true;
-                if(value <= 0 || !std::isfinite(value))
+                if(isBad(value))
                     good = false;
                 if(good || markBadMode == MarkBadMode::None)
                     out[j*rowStride+i] = value;
@@ -353,7 +362,7 @@ try
         {
             bool good = true;
             const auto value = data[n];
-            if(value <= 0 || !std::isfinite(value))
+            if(isBad(value))
                 good = false;
             if(good || markBadMode == MarkBadMode::None)
                 out[n] = value;

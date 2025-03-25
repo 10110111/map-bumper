@@ -417,7 +417,7 @@ try
             const ssize_t newWidth = width/N;
             const ssize_t hshift = n * newWidth;
             const auto newOutFileName = QString::fromStdString(outFileName).replace(QRegularExpression("(\\.[^.]+)$"),
-                                                                                    QString("-%1\\1").arg(3600/N/2 + n*3600/N, 4, 10, QChar('0')));
+                                                                                    QString("-%1\\1").arg((1800+3600/N/2 + n*3600/N) % 3600, 4, 10, QChar('0')));
             std::vector<uint8_t> outImgData(newWidth*height);
             for(ssize_t j = 0; j < height; ++j)
             {

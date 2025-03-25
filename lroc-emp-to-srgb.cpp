@@ -408,6 +408,37 @@ try
         }
     }
 
+    if(polarToEquirect && isPolar)
+    {
+        // Split the image into 4 sectors, with names describing the center longitude
+        const ssize_t N = 4;
+        for(unsigned n = 0; n < N; ++n)
+        {
+            const ssize_t newWidth = width/N;
+            const ssize_t hshift = n * newWidth;
+            const auto newOutFileName = QString::fromStdString(outFileName).replace(QRegularExpression("(\\.[^.]+)$"),
+                                                                                    QString("-%1\\1").arg(3600/N/2 + n*3600/N, 4, 10, QChar('0')));
+            std::vector<uint8_t> outImgData(newWidth*height);
+            for(ssize_t j = 0; j < height; ++j)
+            {
+                const ssize_t linePos = j*newWidth;
+                for(ssize_t i = 0; i < newWidth; ++i)
+                {
+                    outImgData[linePos + i] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[j*width+i+hshift]) * valueScale, 0., 1.));
+                }
+            }
+            const QImage outImg(outImgData.data(), newWidth, height, newWidth, QImage::Format_Grayscale8);
+            std::cerr << "Saving output file with dimensions " << newWidth << " × " << height << "... ";
+            if(!outImg.save(newOutFileName, nullptr, 100))
+            {
+                std::cerr << "Failed to save output file " << newOutFileName.toStdString() << "\n";
+                return 1;
+            }
+            std::cerr << "done\n";
+        }
+        return 0;
+    }
+
     std::vector<uint8_t> outImgData(rowStride*height);
     for(size_t n = 0; n < out.size(); ++n)
         outImgData[n] = 255.*sRGBTransferFunction(std::clamp(std::abs(out[n]) * valueScale, 0., 1.));

@@ -10,7 +10,7 @@ double fetch(T const* data, const ssize_t width, const ssize_t height,
              const size_t rowStride, const size_t channelsPerPixel,
              const size_t subpixelIndex, const ssize_t requestedX, const ssize_t requestedY)
 {
-    const auto x = std::clamp(requestedX, ssize_t(0), width);
+    const auto x = std::clamp(requestedX, ssize_t(0), width-1);
     const auto y = std::clamp(requestedY, ssize_t(0), height-1);
 
     const auto rawValue = data[x*channelsPerPixel + subpixelIndex + y*rowStride];

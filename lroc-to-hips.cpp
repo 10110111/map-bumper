@@ -160,35 +160,17 @@ double sRGBInverseTransferFunction(const double srgb)
 	       d * srgb/12.92;
 }
 
-double wmsToRed(const double x)
+double empToRed(const double x)
 {
-    const auto x2 = x*x;
-    const auto x4 = x2*x2;
-    const auto x8 = x4*x4;
-    const auto x16 = x8*x8;
-    const auto x32 = x16*x16;
-    const auto x48 = x32*x16;
-    return 3.55192315861786 + x*(6.56189433868235 + x*(31.7121712083171 + x*(-56.3543748015033 + x*(31.1809216095956 + 1.01475105374168*x48))));
+    return 1.63879529179947*x;
 }
-double wmsToGreen(const double x)
+double empToGreen(const double x)
 {
-    const auto x2 = x*x;
-    const auto x4 = x2*x2;
-    const auto x8 = x4*x4;
-    const auto x16 = x8*x8;
-    const auto x32 = x16*x16;
-    const auto x48 = x32*x16;
-    return 2.60839445543049 + x*(5.45378170251246 + x*(20.6010742459879 + x*(-35.1688081878114 + x*(19.3469470742881 + 1.00733112382061*x48))));
+    return 1.22804568919149*x;
 }
-double wmsToBlue(const double x)
+double empToBlue(const double x)
 {
-    const auto x2 = x*x;
-    const auto x4 = x2*x2;
-    const auto x8 = x4*x4;
-    const auto x16 = x8*x8;
-    const auto x32 = x16*x16;
-    const auto x48 = x32*x16;
-    return 1.98418672575485 + x*(4.20391508647678 + x*(13.3557316801473 + x*(-20.5619534557279 + x*(10.9705752833082 + 0.954472577730387*x48))));
+    return 0.926077092900726*x;
 }
 
 void fillFace(const int order, const int pix, const uint8_t* data,
@@ -222,20 +204,20 @@ void fillFace(const int order, const int pix, const uint8_t* data,
             const int i = y, j = x;
 
             const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
-            const auto samp = sample(data, width, height, rowStride, 1, 0, longitude, latitude);
-            const auto sampSm = sample(small.bits(), small.width(), small.height(), small.bytesPerLine(), 1, 0, longitude, latitude);
+            const auto samp = sRGBInverseTransferFunction(sample(data, width, height, rowStride, 1, 0, longitude, latitude));
+            const auto sampSm = sRGBInverseTransferFunction(sample(small.bits(), small.width(), small.height(), small.bytesPerLine(), 1, 0, longitude, latitude));
             const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
             const auto refGsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 1, longitude, latitude);
             const auto refBsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 2, longitude, latitude);
             const auto refR = sRGBInverseTransferFunction(refRsRGB);
             const auto refG = sRGBInverseTransferFunction(refGsRGB);
             const auto refB = sRGBInverseTransferFunction(refBsRGB);
-            const double smallR = wmsToRed(std::abs(sampSm));
-            const double smallG = wmsToGreen(std::abs(sampSm));
-            const double smallB = wmsToBlue(std::abs(sampSm));
-            const double red   = wmsToRed(std::abs(samp));
-            const double green = wmsToGreen(std::abs(samp));
-            const double blue  = wmsToBlue(std::abs(samp));
+            const double smallR = empToRed(std::abs(sampSm));
+            const double smallG = empToGreen(std::abs(sampSm));
+            const double smallB = empToBlue(std::abs(sampSm));
+            const double red   = empToRed(std::abs(samp));
+            const double green = empToGreen(std::abs(samp));
+            const double blue  = empToBlue(std::abs(samp));
             if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
             {
                 outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red   * valueScale, 0., 1.));

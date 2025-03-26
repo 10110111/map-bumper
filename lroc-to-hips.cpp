@@ -173,18 +173,19 @@ double empToBlue(const double x)
     return 0.926077092900726*x;
 }
 
-void fillFace(const int order, const int pix, const uint8_t* data,
+constexpr int DOWNSAMP_FACTOR = 4;
+
+void fillFace(const int order, const int pix, const uint8_t*const data,
               const ssize_t width, const ssize_t height, const ssize_t rowStride,
-              const ssize_t channelsPerPixel, const double valueScale,
-              const QImage& lrocColorRef, const size_t refYMin, const size_t refYMax,
-              const QImage& smallerImg, double* outData)
+              const ssize_t channelsPerPixel, const QImage& lrocColorRef,
+              const size_t refYMin, const size_t refYMax,
+              const uint8_t*const smallData, double* outData)
 {
     const unsigned nside = 1u << order;
     int ix, iy, face;
     healpix_nest2xyf(nside, pix, &ix, &iy, &face);
 
     const auto& ref = lrocColorRef;
-    const auto& small = smallerImg;
 
     for(int y = 0; y < HIPS_TILE_SIZE; ++y)
     {
@@ -205,7 +206,8 @@ void fillFace(const int order, const int pix, const uint8_t* data,
 
             const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
             const auto samp = sRGBInverseTransferFunction(sample(data, width, height, rowStride, 1, 0, longitude, latitude));
-            const auto sampSm = sRGBInverseTransferFunction(sample(small.bits(), small.width(), small.height(), small.bytesPerLine(), 1, 0, longitude, latitude));
+            const auto sampSm = sRGBInverseTransferFunction(sample(smallData, width/DOWNSAMP_FACTOR, height/DOWNSAMP_FACTOR, rowStride/DOWNSAMP_FACTOR,
+                                                                   1, 0, longitude, latitude));
             const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
             const auto refGsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 1, longitude, latitude);
             const auto refBsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 2, longitude, latitude);
@@ -220,9 +222,9 @@ void fillFace(const int order, const int pix, const uint8_t* data,
             const double blue  = empToBlue(std::abs(samp));
             if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
             {
-                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red   * valueScale, 0., 1.));
-                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green * valueScale, 0., 1.));
-                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue  * valueScale, 0., 1.));
+                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
+                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
+                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue , 0., 1.));
             }
             else if(samp < 0)
             {
@@ -371,8 +373,6 @@ Options:
  -h, --help                 This help message
  --value-scale N            Scale albedo by N before saving as color
  --lroc-image filename.ext  Use a LROC-derived sRGB 27360×10640 image filename.ext to correct colors
- --small-data filename.ext  Use a reduced-resolution version of the input map for correction
-                             of brightness (used together with the --lroc-image map)
  --format FORMAT            Set hips_tile_format to FORMAT (only one value is supported)
  --title TITLE              Set obs_title to TITLE
  --type TYPE                Set type (a non-standard property) to TYPE
@@ -403,10 +403,7 @@ try
     QString obs_copyright;
     QString hipsStatus = "public mirror clonable";
     ColorChannel colorChannel = ColorChannel::Green;
-    constexpr double defaultScale = 105;
-    double valueScale = 1 / defaultScale;
     QString lrocSRGBFileName;
-    QString smallerImgFileName;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -488,20 +485,10 @@ try
             GO_TO_PARAM();
             hipsStatus = argv[n];
         }
-        else if(arg == "--value-scale")
-        {
-            GO_TO_PARAM();
-            valueScale = std::stod(argv[n]) / defaultScale;
-        }
         else if(arg == "--lroc-image")
         {
             GO_TO_PARAM();
             lrocSRGBFileName = argv[n];
-        }
-        else if(arg == "--small-data")
-        {
-            GO_TO_PARAM();
-            smallerImgFileName = argv[n];
         }
         else if(arg == "--red")
         {
@@ -536,11 +523,6 @@ try
         std::cerr << "LROC-derived sRGB image not specified\n";
         return 1;
     }
-    if(smallerImgFileName.isEmpty())
-    {
-        std::cerr << "Reduced-resolution map not specified\n";
-        return 1;
-    }
 
     QString finalExt;
     if(imgFormat == "jpeg")
@@ -549,25 +531,6 @@ try
         finalExt = imgFormat;
     else
         throw std::runtime_error("Unexpected output image format: " + imgFormat.toStdString());
-
-    std::cerr << "Preparing data container...";
-    constexpr ssize_t inputTileWidth = 4962;
-    constexpr ssize_t inputTileHeight = inputTileWidth;
-    constexpr ssize_t tileCountVert = 11;
-    constexpr ssize_t tileCountHoriz = tileCountVert * 2;
-    constexpr ssize_t height = inputTileHeight * tileCountVert;
-    constexpr ssize_t width = inputTileWidth * tileCountHoriz;
-    std::unique_ptr<uint8_t[]> bigData(new uint8_t[height*width]);
-    std::cerr << "done\n";
-
-    std::cerr << "Loading the reduced-resolution map... ";
-    QImage smallerImg(smallerImgFileName);
-    if(smallerImg.isNull())
-        throw std::runtime_error(("Failed to load image \""+smallerImgFileName+"\"").toStdString());
-    smallerImg = smallerImg.convertToFormat(QImage::Format_Grayscale8);
-    if(smallerImg.isNull())
-        throw std::runtime_error("Failed to convert the reduced-resolution map to the working format");
-    std::cerr << "done\n";
 
     std::cerr << "Loading LROC-derived sRGB image... ";
     QImage lrocImg(lrocSRGBFileName);
@@ -579,38 +542,64 @@ try
     std::cerr << "done\n";
 
     std::cerr << "Loading input images...\n";
-    for(int tileJ = 0; tileJ < tileCountVert; ++tileJ)
+    constexpr ssize_t bigImgWidth = 27360*4;
+    constexpr ssize_t bigImgHeight = bigImgWidth / 2;
+    std::unique_ptr<uint8_t[]> bigData(new uint8_t[bigImgHeight*bigImgWidth]);
+
+    const QString tiles[4][4] = {{"P900N0000-equirect-2250", "P900N0000-equirect-3150", "P900N0000-equirect-0450", "P900N0000-equirect-1350"},
+                                 {              "E300N2250",               "E300N3150",               "E300N0450",               "E300N1350"},
+                                 {              "E300S2250",               "E300S3150",               "E300S0450",               "E300S1350"},
+                                 {"P900S0000-equirect-2250", "P900S0000-equirect-3150", "P900S0000-equirect-0450", "P900S0000-equirect-1350"}};
+    ssize_t tileTopLineY = 0;
+    for(const auto& row : tiles)
     {
-        for(int tileI = 0; tileI < tileCountHoriz; ++tileI)
+        ssize_t tileLeftColX = 0;
+        ssize_t tileHeight = -1;
+        for(const auto& col : row)
         {
-            const auto inFileName = QString("tile-%1-%2.tiff").arg(tileI,2,10,QChar('0')).arg(tileJ,2,10,QChar('0'));
+            const auto inFileName = QFileInfo(inDir + "/" + col + ".tiff").exists() ? col + ".tiff"
+                                                                      : col + ".bmp";
             std::cerr << " " << inFileName.toStdString() << " ";
             const auto inFilePath = inDir + "/" + inFileName;
             QImage img(inFilePath);
             if(img.isNull())
                 throw std::runtime_error(("Failed to open input image \""+inFilePath+"\"").toStdString());
-            if(img.width() != inputTileWidth || img.height() != inputTileWidth)
-            {
-                throw std::runtime_error("Unexpected tile dimensions: expected "+
-                                         std::to_string(inputTileWidth)+u8"×"+std::to_string(inputTileWidth)+
-                                         ", got "+std::to_string(img.width())+u8"×"+std::to_string(img.height()));
-            }
             img = img.convertToFormat(QImage::Format_Grayscale8);
             if(img.isNull())
                 throw std::runtime_error("Failed to convert input image to the working format");
-            const auto tilePos = inputTileHeight*(tileCountVert - tileJ - 1)*width + inputTileWidth*tileI;
-            for(int bigImgJ = 0; bigImgJ < inputTileHeight; ++bigImgJ)
+            tileHeight = img.height();
+            const auto tilePos = tileTopLineY*bigImgWidth + tileLeftColX;
+            for(int j = 0; j < img.height(); ++j)
             {
-                std::memcpy(bigData.get() + tilePos + bigImgJ*width,
-                            img.bits() + bigImgJ*img.bytesPerLine(),
-                            inputTileWidth);
+                std::memcpy(bigData.get() + tilePos + j*bigImgWidth,
+                            img.bits() + j*img.bytesPerLine(),
+                            img.width());
             }
+            tileLeftColX += img.width();
             std::cerr << "\n";
+        }
+        tileTopLineY += tileHeight;
+    }
+    std::cerr << "done\n";
+
+    std::cerr << "Generating a lower-resolution version of the full map...";
+    const ssize_t smallImgWidth  = bigImgWidth  / DOWNSAMP_FACTOR;
+    const ssize_t smallImgHeight = bigImgHeight / DOWNSAMP_FACTOR;
+    std::unique_ptr<uint8_t[]> smallData(new uint8_t[smallImgWidth*smallImgHeight]);
+    for(ssize_t j = 0; j < smallImgHeight; ++j)
+    {
+        for(ssize_t i = 0; i < smallImgWidth; ++i)
+        {
+            double sum = 0;
+            for(ssize_t x = 0; x < DOWNSAMP_FACTOR; ++x)
+                for(ssize_t y = 0; y < DOWNSAMP_FACTOR; ++y)
+                    sum += bigData[(j*DOWNSAMP_FACTOR+y)*bigImgWidth + (i*DOWNSAMP_FACTOR+x)];
+            smallData[j*smallImgWidth+i] = sum / (DOWNSAMP_FACTOR*DOWNSAMP_FACTOR);
         }
     }
     std::cerr << "done\n";
 
-    const int orderMax = std::ceil(std::log2(width / (4. * HIPS_TILE_SIZE * M_SQRT2)));
+    const int orderMax = std::ceil(std::log2(bigImgWidth / (4. * HIPS_TILE_SIZE * M_SQRT2)));
     // First create the tiles of the deepest level
     std::cerr << "Creating tiles of order " << orderMax << "...\n";
     {
@@ -618,8 +607,8 @@ try
         std::atomic_int numThreadsReportedFirstProgress{0};
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
-        auto work = [absolutePixMax,orderMax,outDir,startTime,lrocImg,smallerImg,
-                     &bigData = std::as_const(bigData),colorChannel, valueScale,
+        auto work = [absolutePixMax,orderMax,outDir,startTime,lrocImg,&smallData = std::as_const(smallData),
+                     &bigData = std::as_const(bigData),colorChannel,
                      &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
         {
             constexpr int channelsPerPixel = 3;
@@ -631,8 +620,8 @@ try
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
             for(int pix = pixMin; pix < pixMax; ++pix)
             {
-                fillFace(orderMax, pix, bigData.get(), width, height, width, channelsPerPixel,
-                         valueScale, lrocImg, refYmin, refYmax, smallerImg, data.data());
+                fillFace(orderMax, pix, bigData.get(), bigImgWidth, bigImgHeight, bigImgWidth, channelsPerPixel,
+                         lrocImg, refYmin, refYmax, smallData.get(), data.data());
 
                 using OutType = uchar;
                 std::vector<OutType> outBits;

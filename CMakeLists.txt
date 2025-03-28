@@ -28,6 +28,9 @@ target_link_libraries(equirect2hips Qt6::Core Qt6::Gui)
 add_executable(lroc-to-hips lroc-to-hips.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(lroc-to-hips Qt6::Core Qt6::Gui)
 
+add_executable(gld100-to-hips-normalmap gld100-to-hips-normalmap.cpp healpix.cpp hips.cpp timing.cpp)
+target_link_libraries(gld100-to-hips-normalmap Qt6::Core Qt6::Gui)
+
 add_executable(heightmap2normalmap heightmap2normalmap.cpp)
 target_link_libraries(heightmap2normalmap Qt6::Core Qt6::Gui)
 

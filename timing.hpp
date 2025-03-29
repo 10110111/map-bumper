@@ -1,4 +1,7 @@
+#pragma once
+#include <cmath>
 #include <chrono>
+#include <atomic>
 #include <sstream>
 
 template<typename T>
@@ -39,3 +42,10 @@ std::string formatDeltaTime(const std::chrono::time_point<T> timeBegin, const st
     }
     return ss.str();
 }
+
+void handleProgressReporting(const size_t totalItemCount,
+                             const std::chrono::time_point<std::chrono::steady_clock> startTime,
+                             std::chrono::time_point<std::chrono::steady_clock>& time0,
+                             std::atomic_int& numThreadsReportedFirstProgress,
+                             size_t& itemsDoneInThisThreadAfterLastUpdate,
+                             std::atomic<unsigned>& itemsDone);

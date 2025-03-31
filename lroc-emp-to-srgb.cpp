@@ -138,13 +138,28 @@ Options:
     return ret;
 }
 
-std::pair<double/*x*/,double/*y*/> latLonToStereoPoint(const double longitude, const double latitude)
+std::pair<double/*i*/,double/*j*/> latLonToStereoPoint(const double longitude, const double latitude, const double sphereRadius,
+                                                       const double mapScale, const double lineProjectionOffset,
+                                                       const double sampleProjectionOffset, bool north)
 {
-    const auto sinLat = std::sin(std::abs(latitude));
-    const auto R = std::sqrt((1-sinLat)/(1+sinLat));
-    auto x = std::sin(longitude);
-    auto y = std::cos(longitude);
-    return {x*R, y*R};
+    // Following the description in DSMAP.CAT
+    using namespace std;
+    double x, y;
+    if(north)
+    {
+        const auto tanL = tan(M_PI/4 - latitude/2);
+        x = -2*sphereRadius*sin(longitude)*tanL;
+        y = -2*sphereRadius*cos(longitude)*tanL;
+    }
+    else
+    {
+        const auto tanL = tan(M_PI/4 + latitude/2);
+        x = -2*sphereRadius*sin(longitude)*tanL;
+        y =  2*sphereRadius*cos(longitude)*tanL;
+    }
+    const auto i = sampleProjectionOffset + x / mapScale;
+    const auto j = lineProjectionOffset + y / mapScale;
+    return {i,j};
 }
 
 int main(int argc, char** argv)
@@ -290,6 +305,18 @@ try
         return 1;
     }
 
+    const auto radiusA = QRegularExpression(R"(\n\s*A_AXIS_RADIUS\s*=\s*([0-9.]+)\s*<KM>\s*\n)").match(header).captured(1).toDouble();
+    const auto radiusB = QRegularExpression(R"(\n\s*B_AXIS_RADIUS\s*=\s*([0-9.]+)\s*<KM>\s*\n)").match(header).captured(1).toDouble();
+    const auto radiusC = QRegularExpression(R"(\n\s*C_AXIS_RADIUS\s*=\s*([0-9.]+)\s*<KM>\s*\n)").match(header).captured(1).toDouble();
+    if(radiusA <= 0 || radiusA != radiusB || radiusB != radiusC)
+        throw std::runtime_error(QString("Bad reference sphere radii found. Expected three equal positive radii, but found %1, %2, %3")
+                                    .arg(radiusA).arg(radiusB).arg(radiusC).toStdString());
+    const auto sphereRadius = radiusA * 1000;
+
+    const auto lineProjectionOffset = QRegularExpression(R"(\n\s*LINE_PROJECTION_OFFSET\s*=\s*([0-9.]+)\s*<PIXEL>\s*\n)").match(header).captured(1).toDouble();
+    const auto sampleProjectionOffset = QRegularExpression(R"(\n\s*SAMPLE_PROJECTION_OFFSET\s*=\s*([0-9.]+)\s*<PIXEL>\s*\n)").match(header).captured(1).toDouble();
+    const auto mapScale = QRegularExpression(R"(\n\s*MAP_SCALE\s*=\s*([0-9.]+)\s*<METERS/PIXEL>\s*\n)").match(header).captured(1).toDouble();
+
     auto rowStride = width;
     std::vector<float> data(rowStride*height);
     const qint64 sizeToRead = data.size() * sizeof data[0];
@@ -317,28 +344,21 @@ try
         const auto inputWidth = width, inputHeight = height;
 
         // Top and left edges contain a useless row (resp. column) that should be skipped.
-        const ssize_t totalRadius = (width - 1) / 2;
         width = 27360 * 4; // Total width of the equirectangular data in -60°..60° region
         rowStride = width;
         const auto totalMapHeight = width / 2;
         height = totalMapHeight / 2 * 30/90; // Northern/Southern ±30°..±90° region
 
-        // Maximum radius of the stereographic projection of a point on a unit sphere at a latitude of 60°
-        const auto maxR = 2-std::sqrt(3.);
-
         out.resize(rowStride*height);
         for(ssize_t j = 0; j < height; ++j)
         {
-            const auto latitude = isNorth ? M_PI/2 - M_PI/6*(j+0.5)/height
-                                          : M_PI/2 - M_PI/6*(height-(j+0.5))/height;
+            const auto latitude = isNorth ?   M_PI/2 - M_PI/6*(j+0.5)/height
+                                          : -(M_PI/2 - M_PI/6*(height-(j+0.5))/height);
             for(ssize_t i = 0; i < width; ++i)
             {
-                const auto longitude = isNorth ? -M_PI + 2*M_PI*(i+0.5)/width
-                                               : -2*M_PI*(i+0.5)/width;
-                const auto [x,y] = latLonToStereoPoint(longitude, latitude);
-                // Top and left edges contain a useless row (resp. column) that should be skipped, this is where the 1 are from.
-                const auto inputImgI = x * totalRadius / maxR + totalRadius + 1 + 0.5;
-                const auto inputImgJ = y * totalRadius / maxR + totalRadius + 1 + 0.5;
+                const auto longitude = 2*M_PI*(i+0.5)/width;
+                const auto [inputImgI,inputImgJ] = latLonToStereoPoint(longitude, latitude, sphereRadius, mapScale,
+                                                                       lineProjectionOffset, sampleProjectionOffset, isNorth);
 
                 const bool finalLines = isNorth ? j+2>=height : j<2;
                 const auto value = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ, finalLines);

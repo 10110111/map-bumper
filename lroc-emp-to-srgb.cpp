@@ -360,8 +360,8 @@ try
                 const auto [inputImgI,inputImgJ] = latLonToStereoPoint(longitude, latitude, sphereRadius, mapScale,
                                                                        lineProjectionOffset, sampleProjectionOffset, isNorth);
 
-                const bool finalLines = isNorth ? j+2>=height : j<2;
-                const auto value = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ, finalLines);
+                const bool finalLine = isNorth ? j+1>=height : j<1;
+                const auto value = sample(data.data(), inputWidth, inputHeight, inputWidth, 1, 0, inputImgI, inputImgJ, finalLine);
 
                 bool good = true;
                 if(isBad(value))

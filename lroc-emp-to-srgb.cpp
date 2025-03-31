@@ -148,14 +148,14 @@ std::pair<double/*i*/,double/*j*/> latLonToStereoPoint(const double longitude, c
     if(north)
     {
         const auto tanL = tan(M_PI/4 - latitude/2);
-        x = -2*sphereRadius*sin(longitude)*tanL;
-        y = -2*sphereRadius*cos(longitude)*tanL;
+        x =  2*sphereRadius*sin(longitude)*tanL;
+        y =  2*sphereRadius*cos(longitude)*tanL;
     }
     else
     {
         const auto tanL = tan(M_PI/4 + latitude/2);
-        x = -2*sphereRadius*sin(longitude)*tanL;
-        y =  2*sphereRadius*cos(longitude)*tanL;
+        x =  2*sphereRadius*sin(longitude)*tanL;
+        y = -2*sphereRadius*cos(longitude)*tanL;
     }
     const auto i = sampleProjectionOffset + x / mapScale;
     const auto j = lineProjectionOffset + y / mapScale;
@@ -356,7 +356,7 @@ try
                                           : -(M_PI/2 - M_PI/6*(height-(j+0.5))/height);
             for(ssize_t i = 0; i < width; ++i)
             {
-                const auto longitude = 2*M_PI*(i+0.5)/width;
+                const auto longitude = -M_PI + 2*M_PI*(i+0.5)/width;
                 const auto [inputImgI,inputImgJ] = latLonToStereoPoint(longitude, latitude, sphereRadius, mapScale,
                                                                        lineProjectionOffset, sampleProjectionOffset, isNorth);
 

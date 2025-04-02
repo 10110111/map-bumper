@@ -36,16 +36,15 @@ void handleProgressReporting(const size_t totalItemCount,
         // to overhead of thread startup, so skip first measurement.
         if(isTimeReportingThread && reportedProgressFirstTime)
         {
-            if(secToEnd > 60)
-            {
-                const auto min = secToEnd/60;
-                const auto sec = secToEnd - min*60;
-                ss << ", ETA: " << min << 'm' << sec << "s\n";
-            }
-            else
-            {
-                ss << ", ETA: " << secToEnd << "s\n";
-            }
+            const auto days = secToEnd/(3600*24);
+            const auto hr = secToEnd/3600%24;
+            const auto min = secToEnd/60%60;
+            const auto sec = secToEnd%60;
+            ss << ", ETA: ";
+            if(days) ss << days << 'd';
+            if(days || hr) ss << hr << 'h';
+            if(days || hr || min) ss << min << 'm';
+            ss << sec << "s\n";
         }
         else
         {

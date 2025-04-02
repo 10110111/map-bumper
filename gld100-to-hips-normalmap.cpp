@@ -23,6 +23,7 @@ constexpr double HOLE_AT_THE_POLE_LATITUDE = 78.5*M_PI/180; // with a small safe
 struct Tile
 {
     QString sector;
+    double maxAltitude;
     double sphereRadius;
     double metersPerUnit;
     double lineProjectionOffset;
@@ -42,6 +43,8 @@ enum SectorOffset
     P900S,
     P900S_256P,
 };
+
+template<typename T> auto sqr(T const& x) { return x*x; }
 
 //! Reduces input value to [-PI, PI] range
 double normalizeLon(double lon)
@@ -367,6 +370,10 @@ Tile readTile(QString const& inDir, QString const& sector)
                   << tile.file->errorString().toStdString() << "\n";
         return {};
     }
+    std::cerr << "Finding maximum altitude in the sector...";
+    const auto maxDataValue = *std::max_element(tile.data, tile.data+tile.width*tile.height);
+    tile.maxAltitude = tile.metersPerUnit * maxDataValue;
+    std::cerr << " " << tile.maxAltitude << " m\n";
     return tile;
 }
 
@@ -467,6 +474,105 @@ void fillFace(const int order, const int pix, const std::vector<Tile>& heightMap
     }
 }
 
+glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
+                           const std::vector<Tile>& heightMapTiles,
+                           const double resolutionAtEquator, const double metersPerUnit,
+                           const double sphereRadius, const double maxRadiusSquared)
+{
+    using namespace glm;
+
+    const double deltaLatLon = 2*M_PI/resolutionAtEquator;
+    const double eastLon = raySourceLon + deltaLatLon;
+    const double eastLat = raySourceLat;
+
+    const double northLat = raySourceLat + deltaLatLon;
+    const double northLon = raySourceLon;
+
+    const double raySourceHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, raySourceLon, raySourceLat);
+    const double raySourceRadius = sphereRadius + raySourceHeight;
+
+    const double eastHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, eastLon, eastLat);
+    const double eastRadius = sphereRadius + eastHeight;
+
+    const double northHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, northLon, northLat);
+    const double northRadius = sphereRadius + northHeight;
+
+    const dvec3 zenithAtRaySource= dvec3(cos(raySourceLon) * cos(raySourceLat),
+                                         sin(raySourceLon) * cos(raySourceLat),
+                                         sin(raySourceLat));
+    const dvec3 raySourcePoint = raySourceRadius * zenithAtRaySource;
+
+    const dvec3 eastPoint = eastRadius * dvec3(cos(eastLon) * cos(eastLat),
+                                               sin(eastLon) * cos(eastLat),
+                                               sin(eastLat));
+    const dvec3 northPoint = northRadius * dvec3(cos(northLon) * cos(northLat),
+                                                 sin(northLon) * cos(northLat),
+                                                 sin(northLat));
+    const dvec3 deltaEast = eastPoint - raySourcePoint;
+    const dvec3 deltaNorth = northPoint - raySourcePoint;
+
+    glm::dvec4 horiz;
+    unsigned rayIndex = 0;
+    for(const dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
+    {
+        double sinHorizonElevation = -M_PI/2;
+        for(dvec3 rayPoint = raySourcePoint + rayDir; dot(rayPoint, rayPoint) <= maxRadiusSquared; rayPoint += rayDir)
+        {
+            const dvec3 zenithAtRayPoint = normalize(rayPoint);
+
+            const double longitude = atan2(rayPoint.y, rayPoint.x);
+            const double latitude = asin(zenithAtRayPoint.z);
+            const double altitude = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, longitude, latitude);
+
+            const dvec3 pointAtAlt = zenithAtRayPoint*(sphereRadius+altitude);
+            const double sinElev = dot(normalize(pointAtAlt-raySourcePoint), zenithAtRaySource);
+            if(sinElev > sinHorizonElevation)
+                sinHorizonElevation = sinElev;
+        }
+        horiz[rayIndex] = sinHorizonElevation;
+        ++rayIndex;
+    }
+    return horiz;
+}
+
+void fillHorizonsFace(const int order, const int pix, const std::vector<Tile>& heightMapTiles,
+                      const int channelsPerPixel, const double resolutionAtEquator,
+                      const double metersPerUnit, const double sphereRadius,
+                      const double maxRadiusSquared, uint8_t* outData)
+{
+    const unsigned nside = 1u << order;
+    int ix, iy, face;
+    healpix_nest2xyf(nside, pix, &ix, &iy, &face);
+
+    for(int y = 0; y < HIPS_TILE_SIZE; ++y)
+    {
+        for(int x = 0; x < HIPS_TILE_SIZE; ++x)
+        {
+            double theta, phi;
+            healpix_xyf2ang(nside * HIPS_TILE_SIZE,
+                            ix * HIPS_TILE_SIZE + x, iy * HIPS_TILE_SIZE + y,
+                            face, &theta, &phi);
+            const double latitude = normalizeLat(M_PI/2 - theta);
+            const double longitude = normalizeLon(M_PI+phi);
+            assert(-M_PI <= longitude && longitude <= M_PI);
+            assert(-M_PI/2 <= latitude && latitude <= M_PI/2);
+
+            // HiPS coordinates are swapped, because they were designed from the "look from
+            // sphere center" perspective, while we are making a look from outside a planet.
+            const int i = y, j = x;
+
+            const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
+            const auto sinHorizElevs = computeHorizons(longitude, latitude, heightMapTiles,
+                                                       resolutionAtEquator, metersPerUnit,
+                                                       sphereRadius, maxRadiusSquared);
+            const auto v = sign(sinHorizElevs)*sqrt(abs(sinHorizElevs));
+            constexpr auto max = std::numeric_limits<uint8_t>::max();
+            for(int i = 0; i < channelsPerPixel; ++i)
+                outData[pixelPosInOutData + i] = std::clamp(v[i]/2+0.5, 0.,1.) * max;
+        }
+    }
+}
+
 int usage(const char* argv0, const int ret)
 {
     auto& s = ret ? std::cerr : std::cout;
@@ -474,6 +580,7 @@ int usage(const char* argv0, const int ret)
     s << R"(
 Options:
  -h, --help                 This help message
+ --horizons                 Generate a horizons map instead of a normal map
  --format FORMAT            Set hips_tile_format to FORMAT (only one value is supported)
  --title TITLE              Set obs_title to TITLE
  -d, --desc DESCRIPTION     Set obs_description to DESCRIPTION
@@ -504,6 +611,7 @@ try
     QString hips_copyright;
     QString obs_copyright;
     QString hipsStatus = "public mirror clonable";
+    bool horizonMap = false;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -580,6 +688,10 @@ try
             GO_TO_PARAM();
             hipsStatus = argv[n];
         }
+        else if(arg == "--horizons")
+        {
+            horizonMap = true;
+        }
         else
         {
             std::cerr << "Unknown switch " << argv[n] << "\n";
@@ -651,6 +763,12 @@ try
     }
     const double sphereRadius = heightMapTiles[0].sphereRadius;
 
+    double maxAltitude = -INFINITY;
+    for(const auto& tile : heightMapTiles)
+        if(tile.maxAltitude > maxAltitude)
+            maxAltitude = tile.maxAltitude;
+    const double maxRadiusSquared = sqr(sphereRadius+maxAltitude);
+
     double resolutionAtEquator = 0; // pixels per 360°
     for(unsigned i = N2250; i <= N1350; ++i)
         resolutionAtEquator += heightMapTiles[i].width;
@@ -659,8 +777,9 @@ try
 
     if(!QDir().mkpath(outDir))
         throw std::runtime_error("Failed to create directory \""+outDir.toStdString()+'"');
-    hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, "planet-normal", description,
-                       frame, obs_copyright, hips_copyright, creator, hipsStatus);
+    hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle,
+                       horizonMap ? "planet-horizon" : "planet-normal",
+                       description, frame, obs_copyright, hips_copyright, creator, hipsStatus);
 
     // First create the tiles of the deepest level
     std::cerr << "Creating tiles of order " << orderMax << "...\n";
@@ -670,18 +789,28 @@ try
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
         auto work = [absolutePixMax,orderMax,outDir,startTime,&heightMapTiles = std::as_const(heightMapTiles),
-                     resolutionAtEquator,metersPerUnit,sphereRadius,
+                     resolutionAtEquator,metersPerUnit,sphereRadius,horizonMap,maxRadiusSquared,
                      &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
         {
-            constexpr int channelsPerPixel = 3;
+            const int channelsPerPixel = horizonMap ? 4 : 3;
             std::vector<uint8_t> data(HIPS_TILE_SIZE * HIPS_TILE_SIZE * channelsPerPixel);
 
             auto time0 = std::chrono::steady_clock::now();
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
             for(int pix = pixMin; pix < pixMax; ++pix)
             {
-                fillFace(orderMax, pix, heightMapTiles, channelsPerPixel, resolutionAtEquator, metersPerUnit, sphereRadius, data.data());
-                const QImage out(data.data(), HIPS_TILE_SIZE, HIPS_TILE_SIZE, channelsPerPixel*HIPS_TILE_SIZE, QImage::Format_RGB888);
+                if(horizonMap)
+                {
+                    fillHorizonsFace(orderMax, pix, heightMapTiles, channelsPerPixel, resolutionAtEquator,
+                                     metersPerUnit, sphereRadius, maxRadiusSquared, data.data());
+                }
+                else
+                {
+                    fillFace(orderMax, pix, heightMapTiles, channelsPerPixel, resolutionAtEquator,
+                             metersPerUnit, sphereRadius, data.data());
+                }
+                const QImage out(data.data(), HIPS_TILE_SIZE, HIPS_TILE_SIZE, channelsPerPixel*HIPS_TILE_SIZE,
+                                 horizonMap ? QImage::Format_RGBA8888 : QImage::Format_RGB888);
                 const auto outPath = QString("%1/Norder%2/Dir%3").arg(outDir).arg(orderMax).arg((pix / 10000) * 10000);
                 if(!QDir().mkpath(outPath))
                     throw std::runtime_error("Failed to create directory \""+outPath.toStdString()+'"');

@@ -211,7 +211,7 @@ double sampleNorthSector(std::vector<Tile> const& data, const double longitude, 
                                            sec.lineProjectionOffset, sec.sampleProjectionOffset, true);
     const auto value = samplePolarSector(sec.data, sec.width, sec.height, i, j);
 
-    if(isBad(value))
+    if(isBad(value) || latitude > 78.5*M_PI/180)
     {
         // Fill the hole at the pole
         const auto& sec = data[P900N_256P];
@@ -230,7 +230,7 @@ double sampleSouthSector(std::vector<Tile> const& data, const double longitude, 
                                            sec.lineProjectionOffset, sec.sampleProjectionOffset, false);
     const auto value = samplePolarSector(sec.data, sec.width, sec.height, i, j);
 
-    if(isBad(value))
+    if(isBad(value) || latitude < -78.5*M_PI/180)
     {
         // Fill the hole at the pole
         const auto& sec = data[P900S_256P];

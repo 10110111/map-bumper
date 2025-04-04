@@ -788,16 +788,19 @@ try
         std::atomic_int numThreadsReportedFirstProgress{0};
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
+        std::atomic_int currPix{0};
         auto work = [absolutePixMax,orderMax,outDir,startTime,&heightMapTiles = std::as_const(heightMapTiles),
-                     resolutionAtEquator,metersPerUnit,sphereRadius,horizonMap,maxRadiusSquared,
-                     &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
+                     &currPix,resolutionAtEquator,metersPerUnit,sphereRadius,horizonMap,maxRadiusSquared,
+                     &numThreadsReportedFirstProgress,&itemsDone]()
         {
             const int channelsPerPixel = horizonMap ? 4 : 3;
             std::vector<uint8_t> data(HIPS_TILE_SIZE * HIPS_TILE_SIZE * channelsPerPixel);
 
             auto time0 = std::chrono::steady_clock::now();
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
-            for(int pix = pixMin; pix < pixMax; ++pix)
+            for(int pix = currPix.fetch_add(1, std::memory_order_relaxed);
+                pix < absolutePixMax;
+                pix = currPix.fetch_add(1, std::memory_order_relaxed))
             {
                 if(horizonMap)
                 {
@@ -826,11 +829,7 @@ try
         const auto numThreads = std::max(1u, std::thread::hardware_concurrency());
         std::vector<std::thread> threads;
         for(size_t n = 0; n < numThreads; ++n)
-        {
-            const size_t pixMin = absolutePixMax / numThreads * n;
-            const size_t pixMax = n+1 < numThreads ? absolutePixMax / numThreads * (n+1) : absolutePixMax;
-            threads.emplace_back(work, pixMin, pixMax);
-        }
+            threads.emplace_back(work);
         for(auto& thread : threads)
             thread.join();
         auto time1 = std::chrono::steady_clock::now();

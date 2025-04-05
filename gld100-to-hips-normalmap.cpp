@@ -786,12 +786,12 @@ try
     {
         const int absolutePixMax = 12 * (1 << (2 * orderMax));
         std::atomic_int numThreadsReportedFirstProgress{0};
-        std::atomic<unsigned> itemsDone{0};
+        std::atomic<unsigned> itemsDone{0},  itemsSkipped{0};
         const auto startTime = std::chrono::steady_clock::now();
         std::atomic_int currPix{0};
         auto work = [absolutePixMax,orderMax,outDir,startTime,&heightMapTiles = std::as_const(heightMapTiles),
                      &currPix,resolutionAtEquator,metersPerUnit,sphereRadius,horizonMap,maxRadiusSquared,
-                     &numThreadsReportedFirstProgress,&itemsDone]()
+                     &numThreadsReportedFirstProgress,&itemsDone,&itemsSkipped]()
         {
             const int channelsPerPixel = horizonMap ? 4 : 3;
             std::vector<uint8_t> data(HIPS_TILE_SIZE * HIPS_TILE_SIZE * channelsPerPixel);
@@ -802,6 +802,16 @@ try
                 pix < absolutePixMax;
                 pix = currPix.fetch_add(1, std::memory_order_relaxed))
             {
+                const auto outPath = QString("%1/Norder%2/Dir%3").arg(outDir).arg(orderMax).arg((pix / 10000) * 10000);
+                if(!QDir().mkpath(outPath))
+                    throw std::runtime_error("Failed to create directory \""+outPath.toStdString()+'"');
+                const auto fileName = QString("%1/Npix%4.%5").arg(outPath).arg(pix).arg(hipsInitialExt);
+                if(QFileInfo(fileName).exists())
+                {
+                    ++itemsSkipped;
+                    std::cerr << "Skipping existing "+fileName.mid(outDir.size()+1).toStdString()+"\n";
+                    continue;
+                }
                 if(horizonMap)
                 {
                     fillHorizonsFace(orderMax, pix, heightMapTiles, channelsPerPixel, resolutionAtEquator,
@@ -814,14 +824,10 @@ try
                 }
                 const QImage out(data.data(), HIPS_TILE_SIZE, HIPS_TILE_SIZE, channelsPerPixel*HIPS_TILE_SIZE,
                                  horizonMap ? QImage::Format_RGBA8888 : QImage::Format_RGB888);
-                const auto outPath = QString("%1/Norder%2/Dir%3").arg(outDir).arg(orderMax).arg((pix / 10000) * 10000);
-                if(!QDir().mkpath(outPath))
-                    throw std::runtime_error("Failed to create directory \""+outPath.toStdString()+'"');
-                const auto fileName = QString("%1/Npix%4.%5").arg(outPath).arg(pix).arg(hipsInitialExt);
                 if(!out.save(fileName, nullptr, 100))
                     throw std::runtime_error("Failed to save output file " + fileName.toStdString());
 
-                handleProgressReporting(absolutePixMax, startTime, time0, numThreadsReportedFirstProgress,
+                handleProgressReporting(absolutePixMax - itemsSkipped, startTime, time0, numThreadsReportedFirstProgress,
                                         itemsDoneInThisThreadAfterLastUpdate, itemsDone);
             }
         };

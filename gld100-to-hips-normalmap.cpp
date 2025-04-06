@@ -56,7 +56,7 @@ double normalizeLat(double lat)
     return lat;
 }
 
-std::pair<double/*i*/,double/*j*/> latLonToStereoPoint(const double longitude, const double latitude, const double sphereRadius,
+std::pair<double/*i*/,double/*j*/> lonLatToStereoPoint(const double longitude, const double latitude, const double sphereRadius,
                                                        const double mapScale, const double lineProjectionOffset,
                                                        const double sampleProjectionOffset, bool north)
 {
@@ -207,7 +207,7 @@ double samplePolarSector(int16_t const* data, const size_t width, const size_t h
 double sampleNorthSector(std::vector<Tile> const& data, const double longitude, const double latitude)
 {
     const auto& sec = data[P900N];
-    const auto [i,j] = latLonToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
+    const auto [i,j] = lonLatToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
                                            sec.lineProjectionOffset, sec.sampleProjectionOffset, true);
     const auto value = samplePolarSector(sec.data, sec.width, sec.height, i, j);
 
@@ -215,7 +215,7 @@ double sampleNorthSector(std::vector<Tile> const& data, const double longitude, 
     {
         // Fill the hole at the pole
         const auto& sec = data[P900N_256P];
-        const auto [i,j] = latLonToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
+        const auto [i,j] = lonLatToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
                                                sec.lineProjectionOffset, sec.sampleProjectionOffset, true);
         return samplePolarSector(sec.data, sec.width, sec.height, i, j);
     }
@@ -226,7 +226,7 @@ double sampleNorthSector(std::vector<Tile> const& data, const double longitude, 
 double sampleSouthSector(std::vector<Tile> const& data, const double longitude, const double latitude)
 {
     const auto& sec = data[P900S];
-    const auto [i,j] = latLonToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
+    const auto [i,j] = lonLatToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
                                            sec.lineProjectionOffset, sec.sampleProjectionOffset, false);
     const auto value = samplePolarSector(sec.data, sec.width, sec.height, i, j);
 
@@ -234,7 +234,7 @@ double sampleSouthSector(std::vector<Tile> const& data, const double longitude, 
     {
         // Fill the hole at the pole
         const auto& sec = data[P900S_256P];
-        const auto [i,j] = latLonToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
+        const auto [i,j] = lonLatToStereoPoint(longitude, latitude, sec.sphereRadius, sec.mapScale,
                                                sec.lineProjectionOffset, sec.sampleProjectionOffset, false);
         return samplePolarSector(sec.data, sec.width, sec.height, i, j);
     }

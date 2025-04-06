@@ -18,6 +18,8 @@
 namespace
 {
 
+constexpr double HOLE_AT_THE_POLE_LATITUDE = 78.5*M_PI/180; // with a small safety margin, the README says it's actually 79°
+
 struct Tile
 {
     QString sector;
@@ -211,7 +213,7 @@ double sampleNorthSector(std::vector<Tile> const& data, const double longitude, 
                                            sec.lineProjectionOffset, sec.sampleProjectionOffset, true);
     const auto value = samplePolarSector(sec.data, sec.width, sec.height, i, j);
 
-    if(isBad(value) || latitude > 78.5*M_PI/180)
+    if(isBad(value) || latitude > HOLE_AT_THE_POLE_LATITUDE)
     {
         // Fill the hole at the pole
         const auto& sec = data[P900N_256P];
@@ -230,7 +232,7 @@ double sampleSouthSector(std::vector<Tile> const& data, const double longitude, 
                                            sec.lineProjectionOffset, sec.sampleProjectionOffset, false);
     const auto value = samplePolarSector(sec.data, sec.width, sec.height, i, j);
 
-    if(isBad(value) || latitude < -78.5*M_PI/180)
+    if(isBad(value) || latitude < -HOLE_AT_THE_POLE_LATITUDE)
     {
         // Fill the hole at the pole
         const auto& sec = data[P900S_256P];

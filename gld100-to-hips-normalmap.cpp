@@ -515,12 +515,14 @@ glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
     unsigned rayIndex = 0;
     for(const dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
     {
+        const bool fixedLon = rayIndex == 0 || rayIndex == 2;
+
         double sinHorizonElevation = -M_PI/2;
         for(dvec3 rayPoint = raySourcePoint + rayDir; dot(rayPoint, rayPoint) <= maxRadiusSquared; rayPoint += rayDir)
         {
             const dvec3 zenithAtRayPoint = normalize(rayPoint);
 
-            const double longitude = atan2(rayPoint.y, rayPoint.x);
+            const double longitude = fixedLon ? raySourceLon : atan2(rayPoint.y, rayPoint.x);
             const double latitude = asin(zenithAtRayPoint.z);
             const double altitude = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, longitude, latitude);
 

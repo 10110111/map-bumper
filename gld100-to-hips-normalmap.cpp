@@ -61,6 +61,33 @@ double normalizeLat(double lat)
     return lat;
 }
 
+SectorOffset lonLatToSector(const double longitude, const double latitude)
+{
+    if(latitude > HOLE_AT_THE_POLE_LATITUDE)
+        return P900N_256P;
+    if(latitude < -HOLE_AT_THE_POLE_LATITUDE)
+        return P900S_256P;
+    if(latitude > 60*M_PI/180)
+        return P900N;
+    if(latitude < -60*M_PI/180)
+        return P900S;
+    const auto lon = normalizeLon(longitude);
+    if(latitude > 0)
+    {
+        if(lon > 90*M_PI/180) return N1350;
+        if(lon > 0) return N0450;
+        if(lon > -90*M_PI/180) return N3150;
+        return N2250;
+    }
+    else
+    {
+        if(lon > 90*M_PI/180) return S1350;
+        if(lon > 0) return S0450;
+        if(lon > -90*M_PI/180) return S3150;
+        return S2250;
+    }
+}
+
 std::pair<double/*i*/,double/*j*/> lonLatToStereoPoint(const double longitude, const double latitude, const double sphereRadius,
                                                        const double mapScale, const double lineProjectionOffset,
                                                        const double sampleProjectionOffset, bool north)
@@ -477,7 +504,7 @@ void fillFace(const int order, const int pix, const std::vector<Tile>& heightMap
 glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
                            const std::vector<Tile>& heightMapTiles,
                            const double resolutionAtEquator, const double metersPerUnit,
-                           const double sphereRadius, const double maxRadiusSquared)
+                           const double sphereRadius, double maxRadiusSquared)
 {
     using namespace glm;
 
@@ -516,6 +543,27 @@ glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
     for(dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
     {
         const bool fixedLon = rayIndex == 0 || rayIndex == 2;
+        const double maxGeoAngle = std::acos(raySourceRadius / std::sqrt(maxRadiusSquared));
+        const auto srcSector = lonLatToSector(raySourceLon, raySourceLat);
+        constexpr double safetyMargin = 1.01; // to avoid missing a border nearby
+        if(fixedLon)
+        {
+            const auto targetSector = rayIndex == 0 ? lonLatToSector(raySourceLon, raySourceLat + maxGeoAngle * safetyMargin)
+                                                    : lonLatToSector(raySourceLon, raySourceLat - maxGeoAngle * safetyMargin);
+            maxRadiusSquared = sqr(sphereRadius + std::max(heightMapTiles[srcSector].maxAltitude,
+                                                           heightMapTiles[targetSector].maxAltitude));
+        }
+        else
+        {
+            const auto maxRayLength = std::sqrt(maxRadiusSquared - sqr(raySourceRadius));
+            const auto finalRayPoint = raySourcePoint + normalize(rayDir) * (maxRayLength * safetyMargin);
+            const dvec3 zenithAtFinalRayPoint = normalize(finalRayPoint);
+            const double finalLongitude = atan2(finalRayPoint.y, finalRayPoint.x);
+            const double finalLatitude = asin(zenithAtFinalRayPoint.z);
+            const auto targetSector = lonLatToSector(finalLongitude, finalLatitude);
+            if(targetSector == srcSector)
+                maxRadiusSquared = sqr(sphereRadius + heightMapTiles[srcSector].maxAltitude);
+        }
 
         double sinHorizonElevation = -M_PI/2;
         for(dvec3 rayPoint = raySourcePoint + rayDir; dot(rayPoint, rayPoint) <= maxRadiusSquared; rayPoint += rayDir)

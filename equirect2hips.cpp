@@ -286,6 +286,10 @@ try
         throw std::runtime_error("Failed to convert input image to the working format");
 
     const int orderMax = std::ceil(std::log2(in.width() / (4 * TILE_SIZE * M_SQRT2)));
+
+    hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, surveyType, description,
+                       frame, obs_copyright, hips_copyright, creator, hipsStatus);
+
     // First create the tiles of the deepest level
     std::cerr << "Creating tiles of order " << orderMax << "...\n";
     {
@@ -347,8 +351,6 @@ try
 
     generateLowerOrderTiles(orderMax, outDir);
     convertTiles(finalExt, imgFormat, orderMax, outDir);
-    hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, surveyType, description,
-                       frame, obs_copyright, hips_copyright, creator, hipsStatus);
 }
 catch(std::exception const& ex)
 {

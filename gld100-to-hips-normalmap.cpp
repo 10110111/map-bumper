@@ -655,6 +655,9 @@ try
 
     const int orderMax = std::ceil(std::log2(resolutionAtEquator / (4. * HIPS_TILE_SIZE * M_SQRT2)));
 
+    hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, "planet-normal", description,
+                       frame, obs_copyright, hips_copyright, creator, hipsStatus);
+
     // First create the tiles of the deepest level
     std::cerr << "Creating tiles of order " << orderMax << "...\n";
     {
@@ -703,8 +706,6 @@ try
 
     generateLowerOrderTiles(orderMax, outDir);
     convertTiles(finalExt, imgFormat, orderMax, outDir);
-    hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, "planet-normal", description,
-                       frame, obs_copyright, hips_copyright, creator, hipsStatus);
 }
 catch(std::exception const& ex)
 {

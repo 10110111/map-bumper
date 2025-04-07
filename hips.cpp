@@ -32,7 +32,7 @@ error:
     return "";
 }
 
-void createLowerOrderTile(const int order, const int pix, const QString& outDir)
+void createLowerOrderTile(const int order, const int pix, const QString& outDir, const bool savePartialTiles)
 {
     try
     {
@@ -43,6 +43,7 @@ void createLowerOrderTile(const int order, const int pix, const QString& outDir)
         const auto inFileTemplate = QString("%1/Norder%2/Dir%4/Npix%5.%3").arg(outDir).arg(order + 1).arg(hipsInitialExt);
 
         QImage outImg(HIPS_TILE_SIZE, HIPS_TILE_SIZE, QImage(inFileTemplate.arg(0).arg(0)).format());
+        outImg.fill(QColor(0,0,0,0));
         {
             QPainter p(&outImg);
             for(int j = 0; j < 2; ++j)
@@ -53,7 +54,17 @@ void createLowerOrderTile(const int order, const int pix, const QString& outDir)
                     const auto path = inFileTemplate.arg((innerPix / 10000) * 10000).arg(innerPix);
                     QImage img(path);
                     if(img.isNull())
-                        throw std::runtime_error("Failed to open \""+path.toStdString()+'"');
+                    {
+                        if(savePartialTiles)
+                        {
+                            std::cerr << "Failed to open \""+path.toStdString()+"\"\n";
+                            continue;
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Failed to open \""+path.toStdString()+'"');
+                        }
+                    }
                     img = img.scaled(HIPS_TILE_SIZE / 2, HIPS_TILE_SIZE / 2, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                     p.drawImage(QPoint(HIPS_TILE_SIZE / 2 * i, HIPS_TILE_SIZE / 2 * j), img);
                 }
@@ -67,7 +78,7 @@ void createLowerOrderTile(const int order, const int pix, const QString& outDir)
     }
 }
 
-void generateLowerOrderTiles(const int orderMax, const QString& outDir)
+void generateLowerOrderTiles(const int orderMax, const QString& outDir, const bool savePartialTiles)
 {
     for(int order = orderMax - 1; order >= 0; --order)
     {
@@ -76,14 +87,14 @@ void generateLowerOrderTiles(const int orderMax, const QString& outDir)
         std::atomic_int numThreadsReportedFirstProgress{0};
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
-        auto work = [absolutePixMax,order,outDir,startTime,
+        auto work = [absolutePixMax,order,outDir,startTime,savePartialTiles,
                      &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
         {
             auto time0 = std::chrono::steady_clock::now();
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;
             for(int pix = pixMin; pix < pixMax; ++pix)
             {
-                createLowerOrderTile(order, pix, outDir);
+                createLowerOrderTile(order, pix, outDir, savePartialTiles);
                 handleProgressReporting(absolutePixMax, startTime, time0, numThreadsReportedFirstProgress,
                                         itemsDoneInThisThreadAfterLastUpdate, itemsDone);
             }

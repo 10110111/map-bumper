@@ -25,6 +25,9 @@ target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 add_executable(equirect2hips equirect2hips.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(equirect2hips Qt6::Core Qt6::Gui)
 
+add_executable(complete-hips-tiles complete-hips-tiles.cpp healpix.cpp hips.cpp timing.cpp)
+target_link_libraries(complete-hips-tiles Qt6::Core Qt6::Gui)
+
 add_executable(lroc-to-hips lroc-to-hips.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(lroc-to-hips Qt6::Core Qt6::Gui)
 

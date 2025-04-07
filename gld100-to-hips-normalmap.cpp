@@ -513,7 +513,7 @@ glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
 
     glm::dvec4 horiz;
     unsigned rayIndex = 0;
-    for(const dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
+    for(dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
     {
         const bool fixedLon = rayIndex == 0 || rayIndex == 2;
 
@@ -529,7 +529,14 @@ glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
             const dvec3 pointAtAlt = zenithAtRayPoint*(sphereRadius+altitude);
             const double sinElev = dot(normalize(pointAtAlt-raySourcePoint), zenithAtRaySource);
             if(sinElev > sinHorizonElevation)
+            {
                 sinHorizonElevation = sinElev;
+                // Tilt the ray up to point above the current horizon estimate
+                // rayDir = length(rayDir) * normalize(pointAtAlt - raySourcePoint);
+                const dvec3 newRayUnnorm = pointAtAlt - raySourcePoint;
+                rayDir = newRayUnnorm * std::sqrt(dot(rayDir, rayDir) / dot(newRayUnnorm, newRayUnnorm));
+                rayPoint = pointAtAlt;
+            }
         }
         horiz[rayIndex] = sinHorizonElevation;
         ++rayIndex;

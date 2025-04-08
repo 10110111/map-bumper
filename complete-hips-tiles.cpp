@@ -90,6 +90,10 @@ try
         throw std::runtime_error("Failed to find HiPS order");
 
     generateLowerOrderTiles(orderMax, hipsDir, true);
+
+    std::cerr << "Generating Allsky previews...\n";
+    for(int order = 0; order <= 3; ++order)
+        generateAllsky(order, hipsDir, 128);
 }
 catch(std::exception const& ex)
 {

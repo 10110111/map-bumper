@@ -116,6 +116,30 @@ void generateLowerOrderTiles(const int orderMax, const QString& outDir, const bo
 
 }
 
+void generateAllsky(const int order, QString const& hipsDir, const int tileSize)
+{
+    const int pixMax = 12 * (1 << (2 * order));
+    const int numTilesInRow = int(std::sqrt(pixMax));
+    const int numTilesRows = (pixMax + numTilesInRow - 1) / numTilesInRow;
+    const auto inFileTemplate = QString("%1/Norder%2/Dir%4/Npix%5.%3").arg(hipsDir).arg(order).arg(hipsInitialExt);
+    QImage outImg(tileSize * numTilesInRow, tileSize * numTilesRows, QImage(inFileTemplate.arg(0).arg(0)).format());
+    outImg.fill(QColor(0,0,0,0));
+    {
+        QPainter p(&outImg);
+        for(int pix = 0; pix < pixMax; ++pix)
+        {
+            const auto path = inFileTemplate.arg((pix / 10000) * 10000).arg(pix);
+            QImage tile(path);
+            if(tile.isNull())
+                throw std::runtime_error("Failed to open \""+path.toStdString()+'"');
+            tile = tile.scaled(tileSize, tileSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            p.drawImage(QPoint(tileSize * (pix % numTilesInRow), tileSize * (pix / numTilesInRow)), tile);
+        }
+    }
+    const auto outFileName = QString("%1/Norder%2/Allsky.%3").arg(hipsDir).arg(order).arg(hipsInitialExt);
+    outImg.save(outFileName, nullptr, 100);
+}
+
 void convertTiles(const QString& finalExt, const QString& formatName, const int orderMax, const QString& outDir)
 {
     if(finalExt == hipsInitialExt) return;

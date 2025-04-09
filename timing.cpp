@@ -1,5 +1,7 @@
 #include "timing.hpp"
+#include <algorithm>
 #include <iostream>
+#include <iomanip>
 
 void handleProgressReporting(const size_t totalItemCount,
                              const std::chrono::time_point<std::chrono::steady_clock> startTime,
@@ -28,10 +30,13 @@ void handleProgressReporting(const size_t totalItemCount,
         itemsDone += itemsDoneInThisThreadAfterLastUpdate;
         itemsDoneInThisThreadAfterLastUpdate = 0;
         const auto progress = double(itemsDone) / totalItemCount;
+        const auto usecSincePrevReport = duration_cast<microseconds>(time1 - time0).count();
         const auto usecElapsed = duration_cast<microseconds>(time1 - startTime).count();
         const long secToEnd = std::lround((1. - progress) / progress * usecElapsed * 1e-6);
         std::ostringstream ss;
-        ss << (std::round(progress * 10000.)/10000.)*100 << "% done";
+        const double progressPerReport = progress / usecElapsed * usecSincePrevReport;
+        const int precDigits = std::clamp(int(std::ceil(-std::log10(progressPerReport))) - 1, 0, 6);
+        ss << std::fixed << std::setprecision(precDigits) << progress*100 << "% done";
         // First ETA estimate is too far from reality, likely due
         // to overhead of thread startup, so skip first measurement.
         if(isTimeReportingThread && reportedProgressFirstTime)

@@ -27,11 +27,11 @@ void handleProgressReporting(const size_t totalItemCount,
 
         itemsDone += itemsDoneInThisThreadAfterLastUpdate;
         itemsDoneInThisThreadAfterLastUpdate = 0;
-        const auto progress = std::round(itemsDone * 10000. / totalItemCount)/10000.;
+        const auto progress = double(itemsDone) / totalItemCount;
         const auto usecElapsed = duration_cast<microseconds>(time1 - startTime).count();
         const long secToEnd = std::lround((1. - progress) / progress * usecElapsed * 1e-6);
         std::ostringstream ss;
-        ss << progress*100 << "% done";
+        ss << (std::round(progress * 10000.)/10000.)*100 << "% done";
         // First ETA estimate is too far from reality, likely due
         // to overhead of thread startup, so skip first measurement.
         if(isTimeReportingThread && reportedProgressFirstTime)

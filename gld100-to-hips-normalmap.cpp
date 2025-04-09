@@ -657,6 +657,8 @@ try
 
     const int orderMax = std::ceil(std::log2(resolutionAtEquator / (4. * HIPS_TILE_SIZE * M_SQRT2)));
 
+    if(!QDir().mkpath(outDir))
+        throw std::runtime_error("Failed to create directory \""+outDir.toStdString()+'"');
     hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, "planet-normal", description,
                        frame, obs_copyright, hips_copyright, creator, hipsStatus);
 

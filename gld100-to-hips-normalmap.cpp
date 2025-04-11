@@ -316,7 +316,7 @@ double sample(std::vector<Tile> const& data, const double resolutionAtEquator, d
     return sampleLeft + (sampleRight-sampleLeft)*fracX;
 }
 
-Tile readTile(QString const& inDir, QString const& sector)
+Tile readTile(QString const& inDir, QString const& sector, const bool findMaxAlt)
 {
     Tile tile;
     tile.sector = sector;
@@ -397,10 +397,17 @@ Tile readTile(QString const& inDir, QString const& sector)
                   << tile.file->errorString().toStdString() << "\n";
         return {};
     }
-    std::cerr << "Finding maximum altitude in the sector...";
-    const auto maxDataValue = *std::max_element(tile.data, tile.data+tile.width*tile.height);
-    tile.maxAltitude = tile.metersPerUnit * maxDataValue;
-    std::cerr << " " << tile.maxAltitude << " m\n";
+    if(findMaxAlt)
+    {
+        std::cerr << "Finding maximum altitude in the sector...";
+        const auto maxDataValue = *std::max_element(tile.data, tile.data+tile.width*tile.height);
+        tile.maxAltitude = tile.metersPerUnit * maxDataValue;
+        std::cerr << " " << tile.maxAltitude << " m\n";
+    }
+    else
+    {
+        tile.maxAltitude = 0;
+    }
     return tile;
 }
 
@@ -631,6 +638,120 @@ void fillHorizonsFace(const int order, const int pix, const std::vector<Tile>& h
     }
 }
 
+void saveCubeMapFace(const QString& outDir, const std::vector<int16_t>& data,
+                     const ssize_t cubeMapSide, const QString& direction)
+{
+    std::cerr << "Finding maximum altitudes in sector '" << direction.toStdString() << "'...\n";
+    constexpr int MAX_ALT_TILES_PER_SIDE = 2;
+    if(cubeMapSide % MAX_ALT_TILES_PER_SIDE)
+        throw std::runtime_error("Cube map side isn't a multiple of max-altitude tiles count per side");
+
+    int16_t maxAltitudes[MAX_ALT_TILES_PER_SIDE][MAX_ALT_TILES_PER_SIDE];
+    const auto tileSide = cubeMapSide / MAX_ALT_TILES_PER_SIDE;
+    const auto numColsInTile = tileSide;
+    const auto numRowsInTile = tileSide;
+
+    for(int j = 0; j < MAX_ALT_TILES_PER_SIDE; ++j)
+    {
+        for(int i = 0; i < MAX_ALT_TILES_PER_SIDE; ++i)
+        {
+            const int16_t*const tile = data.data() + tileSide*(cubeMapSide*j + i);
+            int16_t maxDataValue = 0;
+            for(int rowIdxInTile = 0; rowIdxInTile < numRowsInTile; ++rowIdxInTile)
+            {
+                const auto currRowStart = tile + rowIdxInTile*cubeMapSide;
+                const auto currValue = *std::max_element(currRowStart, currRowStart + numColsInTile);
+                if(currValue > maxDataValue) maxDataValue = currValue;
+            }
+            maxAltitudes[i][j] = maxDataValue;
+            std::cerr << " - Tile [" << i << ", " << j << "]: " << maxDataValue << " m\n";
+        }
+    }
+
+    const auto filePath = outDir + "/cube-face-" + direction + ".dat";
+    std::cerr << "Saving " << filePath.toStdString() << "... ";
+    QFile file(filePath);
+    if(!file.open(QFile::WriteOnly))
+    {
+        throw std::runtime_error(QString("Failed to open %1 for writing: %2")
+                                    .arg(filePath).arg(file.errorString()).toStdString());
+    }
+
+    constexpr uint16_t formatVersion = 2;
+    if(file.write(reinterpret_cast<const char*>(&formatVersion), sizeof formatVersion) != sizeof formatVersion)
+    {
+        throw std::runtime_error(QString("Failed to write to %1: %2")
+                                    .arg(filePath).arg(file.errorString()).toStdString());
+    }
+    if(file.write(reinterpret_cast<const char*>(&cubeMapSide), sizeof cubeMapSide) != sizeof cubeMapSide)
+    {
+        throw std::runtime_error(QString("Failed to write to %1: %2")
+                                    .arg(filePath).arg(file.errorString()).toStdString());
+    }
+    if(file.write(reinterpret_cast<const char*>(&maxAltitudes), sizeof maxAltitudes) != sizeof maxAltitudes)
+    {
+        throw std::runtime_error(QString("Failed to write to %1: %2")
+                                    .arg(filePath).arg(file.errorString()).toStdString());
+    }
+
+    const qint64 bytesToWrite = data.size() * sizeof data[0];
+    if(file.write(reinterpret_cast<const char*>(data.data()), bytesToWrite) != bytesToWrite)
+    {
+        throw std::runtime_error(QString("Failed to write to %1")
+                                    .arg(filePath).arg(file.errorString()).toStdString());
+    }
+
+    if(!file.flush())
+    {
+        throw std::runtime_error(QString("Failed to write to %1")
+                                    .arg(filePath).arg(file.errorString()).toStdString());
+    }
+    std::cerr << "done\n";
+}
+
+void generateAltitudeCubeMap(const QString& outDir, const std::vector<Tile>& heightMapTiles,
+                             const double resolutionAtEquator)
+{
+    // We include the edges of the cube in each face, so that on sampling we can linearly
+    // interpolate the data inside a single face, without the need to split fetches.
+#define FACE_LOOP(DATA_NAME, X_EXPR, Y_EXPR, Z_EXPR)                                            \
+    for(ssize_t i = 0; i < cubeMapSide; ++i)                                                    \
+    {                                                                                           \
+        const auto u = double(i) / (cubeMapSide-1);                                             \
+        for(ssize_t j = 0; j < cubeMapSide; ++j)                                                \
+        {                                                                                       \
+            const auto v = double(j) / (cubeMapSide-1);                                         \
+            const auto pixelPosInData = (i + j*cubeMapSide);                                    \
+            const auto x = X_EXPR;                                                              \
+            const auto y = Y_EXPR;                                                              \
+            const auto z = Z_EXPR;                                                              \
+                                                                                                \
+            const auto longitude = atan2(y,x);                                                  \
+            const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));                        \
+                                                                                                \
+            DATA_NAME[pixelPosInData] =                                                         \
+                std::lround(sample(heightMapTiles, resolutionAtEquator, longitude, latitude));  \
+        }                                                                                       \
+    }                                                                                           \
+    do{}while(false)
+
+    const auto sourcePixelsPerCubeMapSide = resolutionAtEquator/4;
+    // The scale coefficient takes into account the fact that pixel coordinates are now not, say,
+    // longitude, but tan(longitude), and at the border of the cube map side it's tan(PI/4)=1, so,
+    // to preserve the sampling rate at the densest part of the original data set, we need to divide
+    // the resolution by PI/4.
+    const ssize_t cubeMapSide = std::ceil(4/M_PI * sourcePixelsPerCubeMapSide);
+
+    const auto dataSize = cubeMapSide*cubeMapSide;
+    std::vector<int16_t> outData(dataSize);
+    FACE_LOOP(outData,   u*2-1 ,   v*2-1 ,   1  ); saveCubeMapFace(outDir, outData, cubeMapSide, "north");
+    FACE_LOOP(outData,   u*2-1 , -(v*2-1),  -1  ); saveCubeMapFace(outDir, outData, cubeMapSide, "south");
+    FACE_LOOP(outData,   u*2-1 ,    -1   , v*2-1); saveCubeMapFace(outDir, outData, cubeMapSide, "west");
+    FACE_LOOP(outData,     1   ,   u*2-1 , v*2-1); saveCubeMapFace(outDir, outData, cubeMapSide, "lon0");
+    FACE_LOOP(outData, -(u*2-1),     1   , v*2-1); saveCubeMapFace(outDir, outData, cubeMapSide, "east");
+    FACE_LOOP(outData,    -1   , -(u*2-1), v*2-1); saveCubeMapFace(outDir, outData, cubeMapSide, "lon180");
+}
+
 int usage(const char* argv0, const int ret)
 {
     auto& s = ret ? std::cerr : std::cout;
@@ -638,6 +759,8 @@ int usage(const char* argv0, const int ret)
     s << R"(
 Options:
  -h, --help                 This help message
+ --cubemap                  Generate a cube map of heights instead of a normal map for
+                             later use in generation of a horizons map
  --horizons                 Generate a horizons map instead of a normal map
  --format FORMAT            Set hips_tile_format to FORMAT (only one value is supported)
  --title TITLE              Set obs_title to TITLE
@@ -670,6 +793,7 @@ try
     QString obs_copyright;
     QString hipsStatus = "public mirror clonable";
     bool horizonMap = false;
+    bool cubeMap = false;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -750,6 +874,10 @@ try
         {
             horizonMap = true;
         }
+        else if(arg == "--cubemap")
+        {
+            cubeMap = true;
+        }
         else
         {
             std::cerr << "Unknown switch " << argv[n] << "\n";
@@ -766,14 +894,22 @@ try
         std::cerr << "Output directory not specified\n";
         return usage(argv[0], 1);
     }
+    if(horizonMap && cubeMap)
+    {
+        std::cerr << "Both horizon map and altitudes cube map were requested, please choose only one\n";
+        return 1;
+    }
 
     QString finalExt;
-    if(imgFormat == "jpeg")
-        finalExt = "jpg";
-    else if(imgFormat == "webp" || imgFormat == "bmp" || imgFormat == "png" || imgFormat == "tiff")
-        finalExt = imgFormat;
-    else
-        throw std::runtime_error("Unexpected output image format: " + imgFormat.toStdString());
+    if(!cubeMap)
+    {
+        if(imgFormat == "jpeg")
+            finalExt = "jpg";
+        else if(imgFormat == "webp" || imgFormat == "bmp" || imgFormat == "png" || imgFormat == "tiff")
+            finalExt = imgFormat;
+        else
+            throw std::runtime_error("Unexpected output image format: " + imgFormat.toStdString());
+    }
 
     const QString sectors[] = {
                                "P900N0000_256P",
@@ -785,7 +921,7 @@ try
                               };
     std::vector<Tile> heightMapTiles;
     for(const QString& sector : sectors)
-        heightMapTiles.push_back(readTile(inDir, sector));
+        heightMapTiles.push_back(readTile(inDir, sector, !cubeMap));
     for(unsigned i = N2250+1; i <= S1350; ++i)
     {
         if(heightMapTiles[i].width != heightMapTiles[i-1].width || heightMapTiles[i].height != heightMapTiles[i-1].height)
@@ -831,10 +967,17 @@ try
     for(unsigned i = N2250; i <= N1350; ++i)
         resolutionAtEquator += heightMapTiles[i].width;
 
-    const int orderMax = std::ceil(std::log2(resolutionAtEquator / (4. * HIPS_TILE_SIZE * M_SQRT2)));
-
     if(!QDir().mkpath(outDir))
         throw std::runtime_error("Failed to create directory \""+outDir.toStdString()+'"');
+
+    if(cubeMap)
+    {
+        generateAltitudeCubeMap(outDir, heightMapTiles, resolutionAtEquator);
+        return 0;
+    }
+
+    const int orderMax = std::ceil(std::log2(resolutionAtEquator / (4. * HIPS_TILE_SIZE * M_SQRT2)));
+
     hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle,
                        horizonMap ? "planet-horizon" : "planet-normal",
                        description, frame, obs_copyright, hips_copyright, creator, hipsStatus);

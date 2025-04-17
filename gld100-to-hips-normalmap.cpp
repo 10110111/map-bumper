@@ -504,7 +504,7 @@ void fillFace(const int order, const int pix, const std::vector<Tile>& heightMap
 glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
                            const std::vector<Tile>& heightMapTiles,
                            const double resolutionAtEquator, const double metersPerUnit,
-                           const double sphereRadius, double maxRadiusSquared)
+                           const double sphereRadius, const double maxRadiusSquaredOrig)
 {
     using namespace glm;
 
@@ -543,9 +543,10 @@ glm::dvec4 computeHorizons(const double raySourceLon, const double raySourceLat,
     for(dvec3 rayDir : {deltaNorth, deltaEast, -deltaNorth, -deltaEast})
     {
         const bool fixedLon = rayIndex == 0 || rayIndex == 2;
-        const double maxGeoAngle = std::acos(raySourceRadius / std::sqrt(maxRadiusSquared));
+        const double maxGeoAngle = std::acos(raySourceRadius / std::sqrt(maxRadiusSquaredOrig));
         const auto srcSector = lonLatToSector(raySourceLon, raySourceLat);
         constexpr double safetyMargin = 1.01; // to avoid missing a border nearby
+        double maxRadiusSquared = maxRadiusSquaredOrig;
         if(fixedLon)
         {
             const auto targetSector = rayIndex == 0 ? lonLatToSector(raySourceLon, raySourceLat + maxGeoAngle * safetyMargin)

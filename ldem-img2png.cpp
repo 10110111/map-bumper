@@ -115,10 +115,10 @@ try
     const auto radiusB = QRegularExpression(R"(\n\s*B_AXIS_RADIUS\s*=\s*([0-9.]+)\s*<(?:KM|km)>\s*\n)").match(label).captured(1).toDouble();
     const auto radiusC = QRegularExpression(R"(\n\s*C_AXIS_RADIUS\s*=\s*([0-9.]+)\s*<(?:KM|km)>\s*\n)").match(label).captured(1).toDouble();
 
-    const auto sampleType = QRegularExpression(R"(\n\s*\bSAMPLE_TYPE\s*=\s*([^\s]+)\b\s*\n)").match(label).captured(1);
-    const auto sampleBits = QRegularExpression(R"(\n\s*\bSAMPLE_BITS\s*=\s*([^\s]+)\b\s*\n)").match(label).captured(1);
-    const auto sampleOffset = QRegularExpression(R"(\n\s*\bOFFSET\s*=\s*([0-9.]+)\b\s*\n)").match(label).captured(1).toDouble();
-    const auto sampleScalingFactor = QRegularExpression(R"(\bSCALING_FACTOR\s*=\s*([0-9]+)\b\s*\n)").match(label).captured(1).toDouble();
+    const auto sampleType = QRegularExpression(R"(\n\s*\bSAMPLE_TYPE\s*=\s*([^\s]+)\s*\n)").match(label).captured(1);
+    const auto sampleBits = QRegularExpression(R"(\n\s*\bSAMPLE_BITS\s*=\s*([^\s]+)\s*\n)").match(label).captured(1);
+    const auto sampleOffset = QRegularExpression(R"(\n\s*\bOFFSET\s*=\s*([0-9.]+)\s*\n)").match(label).captured(1).toDouble();
+    const auto sampleScalingFactor = QRegularExpression(R"(\bSCALING_FACTOR\s*=\s*([0-9.]+)\s*\n)").match(label).captured(1).toDouble();
     const auto sampleUnit = QRegularExpression(R"(\n\s*\bUNIT\s*=\s*([^\s]+)\b\s*\n)").match(label).captured(1);
 
     enum class Type

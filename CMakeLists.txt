@@ -64,3 +64,6 @@ target_link_libraries(combine-lroc-and-moonkit Qt6::Core Qt6::Gui)
 add_executable(sldem-img2png sldem-img2png.cpp)
 target_link_libraries(sldem-img2png Qt6::Core Qt6::Gui)
 target_compile_options(sldem-img2png PRIVATE -fno-strict-aliasing)
+
+add_executable(ldem-img2png ldem-img2png.cpp)
+target_link_libraries(ldem-img2png Qt6::Core Qt6::Gui)

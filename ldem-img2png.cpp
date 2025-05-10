@@ -157,20 +157,19 @@ try
         throw std::runtime_error(("Unexpected sample unit: "+sampleUnit).toStdString());
 
     const bool samplesAreInKM = sampleUnit == "KILOMETER";
-    const auto sampleOffsetInKM = sampleOffset * (samplesAreInKM ? 1 : 1e-3);
 
     const auto inputMetersPerUnit = sampleScalingFactor * (samplesAreInKM ? 1000 : 1);
     if(outputMetersPerUnit <= 0)
         outputMetersPerUnit = 1;
 
-    const auto inputReferenceRadius = sampleOffset;
+    const auto inputReferenceRadius = sampleOffset * (samplesAreInKM ? 1000 : 1);
     if(outputReferenceRadius <= 0)
-        outputReferenceRadius = inputReferenceRadius * (samplesAreInKM ? 1 : 1000);
-
-    if(std::abs(sampleOffsetInKM - inputReferenceRadius) > 1e-4)
     {
-        throw std::runtime_error(QString("Unexpected sample offset: expected %1, got %2.")
-                                    .arg(inputReferenceRadius).arg(sampleOffsetInKM).toStdString());
+        outputReferenceRadius = inputReferenceRadius;
+    }
+    else
+    {
+        outputReferenceRadius *= 1000;
     }
 
     QFile in(inFileName);
@@ -196,9 +195,9 @@ try
         data = reinterpret_cast<decltype(data)>(in.map(0, sizeToRead));
         for(ssize_t n = 0; n < numPixels; ++n)
         {
-            const double value = data[n];
+            const double value = data[n] * inputMetersPerUnit;
             const auto recenteredValue = value + inputReferenceRadius - outputReferenceRadius;
-            const auto outputValue = recenteredValue * inputMetersPerUnit / outputMetersPerUnit;
+            const auto outputValue = recenteredValue / outputMetersPerUnit;
             outData[n] = outputValue;
         }
         break;
@@ -210,9 +209,9 @@ try
         data = reinterpret_cast<decltype(data)>(in.map(0, sizeToRead));
         for(ssize_t n = 0; n < numPixels; ++n)
         {
-            const double value = data[n];
+            const double value = data[n] * inputMetersPerUnit;
             const auto recenteredValue = value + inputReferenceRadius - outputReferenceRadius;
-            const auto outputValue = recenteredValue * inputMetersPerUnit / outputMetersPerUnit;
+            const auto outputValue = recenteredValue / outputMetersPerUnit;
             outData[n] = outputValue;
         }
         break;

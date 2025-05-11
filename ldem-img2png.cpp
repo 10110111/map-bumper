@@ -96,7 +96,7 @@ try
     QFile file(labelFileName);
     if(!file.open(QFile::ReadOnly))
     {
-        std::cerr << "Failed to open " << inFileName.toStdString() << " for reading: "
+        std::cerr << "Failed to open " << labelFileName.toStdString() << " for reading: "
                   << file.errorString().toStdString() << "\n";
         return 1;
     }

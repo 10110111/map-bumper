@@ -34,6 +34,9 @@ target_link_libraries(lroc-to-hips Qt6::Core Qt6::Gui)
 add_executable(gld100-to-hips-normalmap gld100-to-hips-normalmap.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(gld100-to-hips-normalmap Qt6::Core Qt6::Gui)
 
+add_executable(sldem-to-hips-normalmap sldem-to-hips-normalmap.cpp healpix.cpp hips.cpp timing.cpp)
+target_link_libraries(sldem-to-hips-normalmap Qt6::Core Qt6::Gui)
+
 add_executable(cubemap2hips-horizonmap cubemap2hips-horizonmap.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(cubemap2hips-horizonmap Qt6::Core Qt6::Gui)
 

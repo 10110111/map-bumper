@@ -573,7 +573,7 @@ try
     }
     const double maxRadiusSquared = sqr(SPHERE_RADIUS+maxAltitude);
 
-    constexpr double resolutionAtEquator = 27291*4; // original data pixels per 360°
+    const double resolutionAtEquator = M_PI/4 * 4*heightMapTiles[0].width; // original data pixels per 360°
 
     if(!QDir().mkpath(outDir))
         throw std::runtime_error("Failed to create directory \""+outDir.toStdString()+'"');

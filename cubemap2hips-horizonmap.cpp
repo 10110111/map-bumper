@@ -14,6 +14,7 @@
 #include "hips.hpp"
 #include "timing.hpp"
 #include "healpix.hpp"
+#include "cubemap.hpp"
 
 namespace
 {
@@ -32,7 +33,7 @@ enum SectorOffset
 struct Tile
 {
     QString sector;
-    static constexpr int MAX_ALT_TILES_PER_SIDE = 2;
+    static constexpr int MAX_ALT_TILES_PER_SIDE = MAX_ALT_TILES_PER_CUBE_SIDE;
     double maxAltitude; // for the whole sector
     double maxAltitudes[MAX_ALT_TILES_PER_SIDE][MAX_ALT_TILES_PER_SIDE]; // per tile
     std::unique_ptr<QFile> file;
@@ -240,35 +241,18 @@ Tile readTile(QString const& inDir, QString const& sector)
                   << tile.file->errorString().toStdString() << "\n";
         return {};
     }
-    uint16_t formatVersion;
-    if(tile.file->read(reinterpret_cast<char*>(&formatVersion), sizeof formatVersion) != sizeof formatVersion)
+    CubeMapFileHeader header = {};
+    if(tile.file->read(reinterpret_cast<char*>(&header), sizeof header) != sizeof header)
     {
-        std::cerr << "Failed to read cube map format version "
+        std::cerr << "Failed to read cube map header from "
                   << filename.toStdString() << ": "
                   << tile.file->errorString().toStdString() << "\n";
         return {};
     }
-    constexpr uint16_t SUPPORTED_VERSION = 2;
-    if(formatVersion != SUPPORTED_VERSION)
+    if(header.formatVersion != CUBEMAP_FORMAT_VERSION)
     {
-        std::cerr << filename.toStdString() << ": cube map format version " << formatVersion
-                  << " differs from the expected version " << SUPPORTED_VERSION << ".\n";
-        return {};
-    }
-    ssize_t cubeMapSide = -1;
-    if(tile.file->read(reinterpret_cast<char*>(&cubeMapSide), sizeof cubeMapSide) != sizeof cubeMapSide)
-    {
-        std::cerr << "Failed to read cube map side length of "
-                  << filename.toStdString() << ": "
-                  << tile.file->errorString().toStdString() << "\n";
-        return {};
-    }
-    int16_t maxAltitudes[Tile::MAX_ALT_TILES_PER_SIDE][Tile::MAX_ALT_TILES_PER_SIDE];
-    if(tile.file->read(reinterpret_cast<char*>(&maxAltitudes), sizeof maxAltitudes) != sizeof maxAltitudes)
-    {
-        std::cerr << "Failed to read cube map maximum value "
-                  << filename.toStdString() << ": "
-                  << tile.file->errorString().toStdString() << "\n";
+        std::cerr << filename.toStdString() << ": cube map format version " << header.formatVersion
+                  << " differs from the expected version " << CUBEMAP_FORMAT_VERSION << ".\n";
         return {};
     }
     std::cerr << "Maximum altitudes in the sector:";
@@ -277,7 +261,7 @@ Tile readTile(QString const& inDir, QString const& sector)
     {
         for(int i = 0; i < Tile::MAX_ALT_TILES_PER_SIDE; ++i)
         {
-            tile.maxAltitudes[i][j] = maxAltitudes[i][j];
+            tile.maxAltitudes[i][j] = header.maxAltitudes[i][j];
             if(tile.maxAltitudes[i][j] > tile.maxAltitude)
                 tile.maxAltitude = tile.maxAltitudes[i][j];
             std::cerr << (i==0 && j==0 ? " " : ", ") << tile.maxAltitudes[i][j];
@@ -286,8 +270,8 @@ Tile readTile(QString const& inDir, QString const& sector)
     std::cerr << "\n";
     std::cerr << "Maximum altitude in the whole sector: " << tile.maxAltitude << " m\n";
 
-    tile.width = cubeMapSide;
-    tile.height= cubeMapSide;
+    tile.width = header.cubeMapSide;
+    tile.height= header.cubeMapSide;
     if(tile.width==0 || tile.height==0)
     {
         std::cerr << "Failed to find image dimensions\n";

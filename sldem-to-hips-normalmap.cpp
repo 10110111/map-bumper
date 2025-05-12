@@ -14,10 +14,10 @@
 #include "hips.hpp"
 #include "timing.hpp"
 #include "healpix.hpp"
+#include "cubemap.hpp"
 
 namespace
 {
-constexpr int MAX_ALT_TILES_PER_CUBE_SIDE = 4;
 
 struct Tile
 {
@@ -329,13 +329,6 @@ void fillFace(const int order, const int pix, const std::vector<Tile>& heightMap
     }
 }
 
-struct CubeMapFileHeader
-{
-    uint32_t formatVersion;
-    uint32_t cubeMapSide;
-    int16_t maxAltitudes[MAX_ALT_TILES_PER_CUBE_SIDE][MAX_ALT_TILES_PER_CUBE_SIDE];
-};
-
 void cubeMapFindMaxAltitudes(const int16_t*const data, const ssize_t cubeMapSide, const QString& direction,
                              int16_t (&maxAltitudes)[MAX_ALT_TILES_PER_CUBE_SIDE][MAX_ALT_TILES_PER_CUBE_SIDE])
 {
@@ -376,8 +369,7 @@ std::unique_ptr<QFile> makeCubeMapFaceFile(const QString& outDir, const ssize_t 
                                     .arg(filePath).arg(file->errorString()).toStdString());
     }
 
-    constexpr auto FORMAT_VERSION = 3;
-    const CubeMapFileHeader header{.formatVersion = FORMAT_VERSION, .cubeMapSide = uint32_t(cubeMapSide), .maxAltitudes={}};
+    const CubeMapFileHeader header{.formatVersion = CUBEMAP_FORMAT_VERSION, .cubeMapSide = uint32_t(cubeMapSide), .maxAltitudes={}};
     if(file->write(reinterpret_cast<const char*>(&header), sizeof header) != sizeof header)
     {
         throw std::runtime_error(QString("Failed to write header to %1: %2")

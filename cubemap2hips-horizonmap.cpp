@@ -560,6 +560,7 @@ try
     {
         const auto sectorOffset = heightMapTiles.size();
         heightMapTiles.push_back(readTile(inDir, sector));
+        if(!heightMapTiles.back().data) return 1;
         heightMapTiles.back().sectorOffset = static_cast<SectorOffset>(sectorOffset);
     }
     for(unsigned i = 1; i < heightMapTiles.size(); ++i)

@@ -19,6 +19,23 @@ set(CMAKE_AUTOUIC ON)
 find_package(Qt6Core 6.3 REQUIRED)
 find_package(Qt6Gui 6.3 REQUIRED)
 
+find_package(TIFF REQUIRED)
+check_include_file_cxx("geotiff/geotiff.h" HAVE_GEOTIFF)
+if(NOT HAVE_GEOTIFF)
+    unset(HAVE_GEOTIFF CACHE)
+    message(FATAL_ERROR "geotiff include header was not found")
+endif()
+find_library(GEOTIFF_LIB geotiff)
+if(NOT GEOTIFF_LIB)
+    unset(GEOTIFF_LIB CACHE)
+    message(FATAL_ERROR "geotiff library was not found")
+endif()
+find_library(PROJ_LIB proj)
+if(NOT PROJ_LIB)
+    unset(PROJ_LIB CACHE)
+    message(FATAL_ERROR "proj library was not found")
+endif()
+
 add_executable(equirect2cubemap equirect2cubemap.cpp)
 target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 
@@ -35,7 +52,7 @@ add_executable(gld100-to-hips-normalmap gld100-to-hips-normalmap.cpp healpix.cpp
 target_link_libraries(gld100-to-hips-normalmap Qt6::Core Qt6::Gui)
 
 add_executable(sldem-to-hips-normalmap sldem-to-hips-normalmap.cpp healpix.cpp hips.cpp timing.cpp)
-target_link_libraries(sldem-to-hips-normalmap Qt6::Core Qt6::Gui)
+target_link_libraries(sldem-to-hips-normalmap Qt6::Core Qt6::Gui TIFF::TIFF ${GEOTIFF_LIB} ${PROJ_LIB})
 
 add_executable(cubemap2hips-horizonmap cubemap2hips-horizonmap.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(cubemap2hips-horizonmap Qt6::Core Qt6::Gui)

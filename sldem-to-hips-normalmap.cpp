@@ -11,6 +11,11 @@
 #include <QImage>
 #include <QPainter>
 #include <QRegularExpression>
+#include <proj.h>
+#include <geotiff/xtiffio.h>
+#include <geotiff/geotiff.h>
+#include <geotiff/geovalues.h>
+#include <geotiff/geo_normalize.h>
 #include "hips.hpp"
 #include "timing.hpp"
 #include "healpix.hpp"
@@ -18,6 +23,23 @@
 
 namespace
 {
+
+constexpr double southLDEMmaxLat = -60 * (M_PI/180);
+
+struct TIFFTile
+{
+    std::unique_ptr<float[]> data;
+    ssize_t width, height;
+    GTIF* gtiff;
+    GTIFDefn defn;
+    PJ* pj = nullptr;
+    PJ_CONTEXT* ctx = nullptr;
+    ~TIFFTile()
+    {
+        if(pj) proj_destroy(pj);
+        if(ctx) proj_context_destroy(ctx);
+    }
+};
 
 struct Tile
 {
@@ -117,12 +139,61 @@ double fetch(std::vector<Tile> const& data, const ssize_t requestedX, const ssiz
     }
 }
 
-double sample(std::vector<Tile> const& data, const double resolutionAtEquator, double longitude, double latitude, const bool useSLDEM)
+double fetchFromRect(float const*const data, const ssize_t width, const ssize_t height,
+                     const ssize_t requestedX, const ssize_t requestedY)
+{
+    const auto x = std::clamp(requestedX, ssize_t(0), width-1);
+    const auto y = std::clamp(requestedY, ssize_t(0), height-1);
+    return data[y*width + x];
+}
+
+double sampleSouthLDEM(TIFFTile const& southLDEM, const double longitude, const double latitude)
+{
+    PJ_COORD coord;
+    coord.xyzt.x = longitude * (180/M_PI);
+    coord.xyzt.y = latitude * (180/M_PI);
+    coord.xyzt.z = 0;
+    coord.xyzt.t = 0;
+    coord = proj_trans(southLDEM.pj, PJ_FWD, coord);
+    double x = coord.xyzt.x;
+    double y = coord.xyzt.y;
+
+    GTIFPCSToImage(southLDEM.gtiff, &x, &y);
+    if(x < 0 || y < 0 || x >= southLDEM.width || y >= southLDEM.height)
+    {
+        // Out of image, must use other data for this location
+        return NAN;
+    }
+
+    const auto floorX = std::floor(x);
+    const auto floorY = std::floor(y);
+
+    const auto pTopLeft     = fetchFromRect(southLDEM.data.get(), southLDEM.width, southLDEM.height, floorX  , floorY);
+    const auto pTopRight    = fetchFromRect(southLDEM.data.get(), southLDEM.width, southLDEM.height, floorX+1, floorY);
+    const auto pBottomLeft  = fetchFromRect(southLDEM.data.get(), southLDEM.width, southLDEM.height, floorX  , floorY+1);
+    const auto pBottomRight = fetchFromRect(southLDEM.data.get(), southLDEM.width, southLDEM.height, floorX+1, floorY+1);
+
+    const auto fracX = x - floorX;
+    const auto fracY = y - floorY;
+
+    const auto sampleLeft  = pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
+    const auto sampleRight = pTopRight + (pBottomRight-pTopRight)*fracY;
+    return sampleLeft + (sampleRight-sampleLeft)*fracX;
+}
+
+double sample(std::vector<Tile> const& data, TIFFTile const& southLDEM, const double resolutionAtEquator, double longitude, double latitude, const bool useSLDEM)
 {
     if(latitude > M_PI/2 || latitude < -M_PI/2)
     {
         latitude = -latitude;
         longitude += M_PI;
+    }
+
+    if(latitude < southLDEMmaxLat)
+    {
+        const auto value = sampleSouthLDEM(southLDEM, longitude, latitude);
+        const auto unitsPerKM = 1e-3;
+        if(!std::isnan(value)) return value * unitsPerKM;
     }
 
     const auto deltaLon = 2.*M_PI/resolutionAtEquator;
@@ -232,7 +303,7 @@ Tile readTile(QString const& inDir, QString const& sector)
 }
 
 glm::dvec3 computeNormal(const double centerLon, const double centerLat,
-                         const std::vector<Tile>& heightMapTiles,
+                         const std::vector<Tile>& heightMapTiles, const TIFFTile& southLDEM,
                          const double resolutionAtEquator,
                          const double metersPerUnit, const double sphereRadius, const bool useSLDEM)
 {
@@ -250,16 +321,16 @@ glm::dvec3 computeNormal(const double centerLon, const double centerLat,
     const double southLat = centerLat - deltaLat;
     const double southLon = centerLon;
 
-    const double eastHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, eastLon, eastLat, useSLDEM);
+    const double eastHeight = metersPerUnit*sample(heightMapTiles, southLDEM, resolutionAtEquator, eastLon, eastLat, useSLDEM);
     const double eastRadius = sphereRadius + eastHeight;
 
-    const double westHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, westLon, westLat, useSLDEM);
+    const double westHeight = metersPerUnit*sample(heightMapTiles, southLDEM, resolutionAtEquator, westLon, westLat, useSLDEM);
     const double westRadius = sphereRadius + westHeight;
 
-    const double northHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, northLon, northLat, useSLDEM);
+    const double northHeight = metersPerUnit*sample(heightMapTiles, southLDEM, resolutionAtEquator, northLon, northLat, useSLDEM);
     const double northRadius = sphereRadius + northHeight;
 
-    const double southHeight = metersPerUnit*sample(heightMapTiles, resolutionAtEquator, southLon, southLat, useSLDEM);
+    const double southHeight = metersPerUnit*sample(heightMapTiles, southLDEM, resolutionAtEquator, southLon, southLat, useSLDEM);
     const double southRadius = sphereRadius + southHeight;
 
     const dvec3 centerDir = dvec3(cos(centerLon) * cos(centerLat),
@@ -294,6 +365,7 @@ glm::dvec3 computeNormal(const double centerLon, const double centerLat,
 }
 
 void fillFace(const int order, const int pix, const std::vector<Tile>& heightMapTiles,
+              const TIFFTile& southLDEM,
               const int channelsPerPixel, const double resolutionAtEquator,
               const double metersPerUnit, const double sphereRadius, const bool useSLDEM,
               uint8_t* outData)
@@ -320,7 +392,7 @@ void fillFace(const int order, const int pix, const std::vector<Tile>& heightMap
             const int i = y, j = x;
 
             const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
-            const auto normal = computeNormal(longitude, latitude, heightMapTiles,
+            const auto normal = computeNormal(longitude, latitude, heightMapTiles, southLDEM,
                                               resolutionAtEquator, metersPerUnit, sphereRadius, useSLDEM);
             constexpr auto max = std::numeric_limits<uint8_t>::max();
             for(int i = 0; i < channelsPerPixel; ++i)
@@ -415,7 +487,7 @@ void saveCubeMapChunk(QFile& file, const int16_t*const data, const ssize_t dataS
     }
 }
 
-void generateAltitudeCubeMap(const QString& outDir, const std::vector<Tile>& heightMapTiles,
+void generateAltitudeCubeMap(const QString& outDir, const std::vector<Tile>& heightMapTiles, const TIFFTile& southLDEM,
                              const double resolutionAtEquator, const double metersPerUnit, const bool useSLDEM)
 {
     // We include the edges of the cube in each face, so that on sampling we can linearly
@@ -439,7 +511,8 @@ void generateAltitudeCubeMap(const QString& outDir, const std::vector<Tile>& hei
                 const auto longitude = atan2(y,x);                                                              \
                 const auto latitude = std::asin(z / std::sqrt(x*x+y*y+z*z));                                    \
                                                                                                                 \
-                const auto samp = sample(heightMapTiles, resolutionAtEquator, longitude, latitude, useSLDEM);   \
+                const auto samp = sample(heightMapTiles, southLDEM, resolutionAtEquator,                        \
+                                         longitude, latitude, useSLDEM);                                        \
                 const auto value = std::lround(metersPerUnit*samp);                                             \
                 if(value < dataTypeMin || value > dataTypeMax)                                                  \
                 {                                                                                               \
@@ -502,6 +575,8 @@ Options:
     return ret;
 }
 
+#define TIFFCHECK(call) if(call < 0) throw std::runtime_error(std::string(__FILE__)+":"+std::to_string(__LINE__)+": "+#call+" returned an error")
+
 }
 
 int main(int argc, char** argv)
@@ -512,6 +587,7 @@ try
 
     QString ldemDir;
     QString sldemDir;
+    QString ldemSouthPartPath;
     QString outDir;
     QString imgFormat = "png";
     QString surveyTitle;
@@ -523,6 +599,7 @@ try
     QString hipsStatus = "public mirror clonable";
     bool cubeMap = false;
     bool useSLDEM = false;
+    bool useSeparateSouthLDEM = false;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -564,6 +641,12 @@ try
             GO_TO_PARAM();
             sldemDir = argv[n];
             useSLDEM = true;
+        }
+        else if(arg == "--ldem-south")
+        {
+            GO_TO_PARAM();
+            ldemSouthPartPath = argv[n];
+            useSeparateSouthLDEM = true;
         }
         else if(arg == "--format")
         {
@@ -640,6 +723,130 @@ try
             finalExt = imgFormat;
         else
             throw std::runtime_error("Unexpected output image format: " + imgFormat.toStdString());
+    }
+
+    TIFFTile southLDEM;
+    if(useSeparateSouthLDEM)
+    {
+        const auto path = ldemSouthPartPath.toStdString();
+        std::cerr << "Reading \"" << path << "\"...\n";
+        TIFFSetWarningHandler(0);
+        const auto tiff = XTIFFOpen(path.c_str(), "r");
+        if(!tiff) throw std::runtime_error("Failed to open the south LDEM file using libtiff");
+        const auto gtiff = GTIFNew(tiff);
+        if(!gtiff) throw std::runtime_error("Failed to initialize geotiff library");
+
+        uint32_t width = 0, height = 0, depth = 0;
+        tdir_t bestDir = 0;
+        for(int currDir = 0;; ++currDir)
+        {
+            uint32_t currWidth, currHeight;
+            uint16_t currDepth;
+            TIFFCHECK(TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &currWidth));
+            TIFFCHECK(TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &currHeight));
+            TIFFCHECK(TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &currDepth));
+            std::cerr << "Found TIFF page with size " << currWidth << u8"×" << currHeight << "...\n";
+            if(currWidth > width && currHeight >= height)
+            {
+                bestDir = TIFFCurrentDirectory(tiff);
+                width = currWidth;
+                height = currHeight;
+                depth = currDepth;
+            }
+            if(!TIFFReadDirectory(tiff)) break;
+        }
+        std::cerr << "Using the largest page, size: " << width << u8"×" << height << ", depth: " << depth << "\n";
+        TIFFSetDirectory(tiff, bestDir);
+        // Make sure this is the directory we wanted
+        {
+            uint32_t currWidth, currHeight;
+            uint16_t currDepth;
+            TIFFCHECK(TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &currWidth));
+            TIFFCHECK(TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &currHeight));
+            TIFFCHECK(TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &currDepth));
+            if(currWidth != width || currHeight != height || currDepth != depth)
+                throw std::runtime_error("Failed to load the desired TIFF directory, loaded something strange");
+        }
+        uint16_t format = 0;
+        TIFFCHECK(TIFFGetField(tiff, TIFFTAG_SAMPLEFORMAT, &format));
+        constexpr uint16_t expectedFormat = SAMPLEFORMAT_IEEEFP;
+        if(format != expectedFormat)
+        {
+            throw std::runtime_error("Unexpected TIFF data format: expected "+
+                                     std::to_string(expectedFormat)+", got "+std::to_string(format));
+        }
+        uint16_t samplesPerPixel = 0;
+        TIFFCHECK(TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samplesPerPixel));
+        if(samplesPerPixel != 1)
+        {
+            throw std::runtime_error("Unexpected number of samples per pixel in south LDEM TIFF "
+                                     "file: expected 1, got "+std::to_string(samplesPerPixel));
+        }
+        if(!TIFFIsTiled(tiff))
+            throw std::runtime_error("South LDEM TIFF file isn't tiled. This is unexpected and unsupported.");
+
+        GTIFDefn defn;
+        if(!GTIFGetDefn(gtiff, &defn))
+            throw std::runtime_error("Failed to get geotiff definition");
+        if(defn.Model != ModelTypeProjected)
+            throw std::runtime_error("Unexpected geotiff model type (expected projected)");
+
+        const auto projection = GTIFGetProj4Defn(&defn);
+        if(!projection) throw std::runtime_error("Failed to get proj4 projection");
+        southLDEM.ctx = proj_context_create();
+        if(!southLDEM.ctx) throw std::runtime_error("Failed to create proj4 context");
+        std::string lonLat = "+proj=longlat ";
+        switch(defn.Ellipsoid)
+        {
+        case Ellipse_WGS_84:
+            lonLat = "+ellps=WGS84";
+            break;
+        case Ellipse_Clarke_1866:
+            lonLat = "+ellps=clrk66";
+            break;
+        case Ellipse_Clarke_1880:
+            lonLat = "+ellps=clrk80";
+            break;
+        case Ellipse_GRS_1980:
+            lonLat = "+ellps=GRS80";
+            break;
+        default:
+            if(defn.SemiMajor && defn.SemiMinor)
+            {
+                lonLat += "+a=" + std::to_string(defn.SemiMajor) +
+                          " +b=" + std::to_string(defn.SemiMinor);
+            }
+        }
+
+        southLDEM.pj = proj_create_crs_to_crs(southLDEM.ctx, lonLat.c_str(), projection, nullptr);
+        GTIFFreeMemory(projection);
+        if(!southLDEM.pj) throw std::runtime_error("Failed to create CRS-to-CRS");
+
+        southLDEM.width = width;
+        southLDEM.height = height;
+        southLDEM.gtiff = gtiff;
+        southLDEM.defn = defn;
+        southLDEM.data.reset(new float[width*height]);
+        uint32_t tileWidth = 0, tileHeight = 0;
+        TIFFCHECK(TIFFGetField(tiff, TIFFTAG_TILEWIDTH, &tileWidth));
+        TIFFCHECK(TIFFGetField(tiff, TIFFTAG_TILELENGTH, &tileHeight));
+        std::cerr << "Tile size: " << tileWidth << u8"×" << tileHeight << "\n";
+        std::cerr << "Decoding the image... ";
+        std::unique_ptr<float[]> tile(new float[tileWidth*tileHeight]);
+        for(uint32_t j = 0; j < height; j += tileHeight)
+        {
+            for(uint32_t i = 0; i < width; i += tileWidth)
+            {
+                TIFFReadTile(tiff, tile.get(), i, j, 0, 0);
+                const auto realTileWidth = i + tileWidth > width ? width - i : tileWidth;
+                const auto realTileHeight = j + tileHeight > height ? height - j : tileHeight;
+                for(uint32_t tileRow = 0; tileRow < realTileHeight; ++tileRow)
+                    std::copy(tile.get() + tileRow * realTileWidth,
+                              tile.get() + (tileRow+1) * realTileWidth,
+                              southLDEM.data.get() + (j+tileRow) * width + i);
+            }
+        }
+        std::cerr << "done\n";
     }
 
     const QString ldemSectors[] =
@@ -726,7 +933,7 @@ try
 
     if(cubeMap)
     {
-        generateAltitudeCubeMap(outDir, heightMapTiles, resolutionAtEquator, metersPerUnit, useSLDEM);
+        generateAltitudeCubeMap(outDir, heightMapTiles, southLDEM, resolutionAtEquator, metersPerUnit, useSLDEM);
         return 0;
     }
 
@@ -744,6 +951,7 @@ try
         const auto startTime = std::chrono::steady_clock::now();
         std::atomic_int currPix{0};
         auto work = [absolutePixMax,orderMax,outDir,startTime,&heightMapTiles = std::as_const(heightMapTiles),
+                     &southLDEM = std::as_const(southLDEM),
                      &currPix,resolutionAtEquator,metersPerUnit,sphereRadius,useSLDEM,
                      &numThreadsReportedFirstProgress,&itemsDone,&itemsSkipped]()
         {
@@ -766,7 +974,7 @@ try
                     std::cerr << "Skipping existing "+fileName.mid(outDir.size()+1).toStdString()+"\n";
                     continue;
                 }
-                fillFace(orderMax, pix, heightMapTiles, channelsPerPixel, resolutionAtEquator,
+                fillFace(orderMax, pix, heightMapTiles, southLDEM, channelsPerPixel, resolutionAtEquator,
                          metersPerUnit, sphereRadius, useSLDEM, data.data());
                 const QImage out(data.data(), HIPS_TILE_SIZE, HIPS_TILE_SIZE, channelsPerPixel*HIPS_TILE_SIZE, QImage::Format_RGB888);
                 if(!out.save(fileName, nullptr, 100))

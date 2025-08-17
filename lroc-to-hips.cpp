@@ -427,10 +427,10 @@ try
     constexpr ssize_t bigImgHeight = bigImgWidth / 2;
     std::unique_ptr<uint8_t[]> bigData(new uint8_t[bigImgHeight*bigImgWidth]);
 
-    const QString tiles[4][4] = {{"P900N0000-equirect-2250", "P900N0000-equirect-3150", "P900N0000-equirect-0450", "P900N0000-equirect-1350"},
-                                 {              "E300N2250",               "E300N3150",               "E300N0450",               "E300N1350"},
-                                 {              "E300S2250",               "E300S3150",               "E300S0450",               "E300S1350"},
-                                 {"P900S0000-equirect-2250", "P900S0000-equirect-3150", "P900S0000-equirect-0450", "P900S0000-equirect-1350"}};
+    const QString tiles[4][4] = {{"P900N0000-2250", "P900N0000-3150", "P900N0000-0450", "P900N0000-1350"},
+                                 {"E300N2250"     , "E300N3150"     , "E300N0450"     , "E300N1350"     },
+                                 {"E300S2250"     , "E300S3150"     , "E300S0450"     , "E300S1350"     },
+                                 {"P900S0000-2250", "P900S0000-3150", "P900S0000-0450", "P900S0000-1350"}};
     ssize_t tileTopLineY = 0;
     for(const auto& row : tiles)
     {

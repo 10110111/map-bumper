@@ -1,5 +1,7 @@
 This repo includes two related tools to convert height maps to normal and horizon map, and a tool to convert equirectangular map to a cube map.
 
+There's also several other tools that help convert some lunar albedo and elevation maps to albedo, normal, and horizon map HiPS; they are described in a [separate file](hips-howto.mdown).
+
 ### heightmap2normalmap
 
 This tool takes an image with size 2n×n — a height map of a sphere in equirectangular projection — and outputs a normal map, also in equirectangular projection. Its usage is as follows:

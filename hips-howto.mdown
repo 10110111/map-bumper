@@ -1,0 +1,72 @@
+Here a way to generate HiPS maps for the Moon is described.
+
+### Albedo map
+
+For this you need:
+
+ 1. [Hapke-normalized reflectance data from LROC](http://pds.lroc.asu.edu/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/MDR/WAC_HAPKE/) for 360, 415, 566, 604, 643, 689 nm (`*.IMG` files).
+ 2. [Empirically-normalized reflectance data from LROC](https://pds.lroc.asu.edu/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/MDR/WAC_EMP/) for 643 nm (`*.IMG` files).
+ 3. Tools from this repository:
+   - `lroc-raw-to-srgb`
+   - `lroc-emp-to-srgb`
+   - `lroc-to-hips`
+ 4. ImageMagick
+
+Having downloaded item 1 to, say, `~/hapke-src-data`, and item 2 to `~/emp-src-data`, and also having built the tools and put the path to them to the `PATH` environment variable, you can now run the following bash commands to convert the original spectral data to sRGB images:
+```bash
+mkdir -pv sectors-hapke
+
+for sector in E350N0450 E350N1350 E350N2250 E350N3150 E350S0450 E350S1350 E350S2250 E350S3150; do
+    lroc-raw-to-srgb ~/hapke-src-data $sector "sectors-hapke/$sector.tiff" --value-scale 4 --fill-bad
+done
+
+mkdir -pv sectors-emp
+
+for sector in E300N0450 E300N1350 E300N2250 E300N3150 E300S0450 E300S1350 E300S2250 E300S3150 P900N0000 P900S0000; do
+    lroc-emp-to-srgb ~/emp-src-data $sector "sectors-emp/$sector.tiff" --value-scale 210 --polar-to-equirect --bad-to-black
+done
+```
+This will yield two directories containing `*.tiff` files that will be fed to the next stage, that will combine the Hapke-normalized images into a single equirectangular map (from 60°S to 60°N, as covered by the source data):
+```bash
+convert sectors-hapke/E350N{225,315,045,135}0.tiff +append n.tiff
+convert sectors-hapke/E350S{225,315,045,135}0.tiff +append s.tiff
+convert /tmp/{n,s}.tiff -append sectors-hapke-combined.tiff
+rm {s,n}.tiff
+```
+Finally, you can generate the HiPS tiles with the following command:
+```
+lroc-to-hips --lroc-image sectors-hapke-combined.tiff sectors-emp moon-albedo-hips --format tiff --type planet --frame moon --title "Moon albedo"
+```
+Then you'll want to convert the TIFF files to whatever format you want with whatever compression settings you want, and edit the `properties` file to fix the `hips_tile_format` field and add missing fields.
+
+### Normal map
+
+For this you need:
+
+ 1. 16 [floating-point cylindrical-projection sectors from LDEM512](https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/FLOAT_IMG/) (`LDEM_512_*_FLOAT.IMG` and `LDEM_512_*_FLOAT.LBL` files).
+ 2. 32 [floating-point 512ppd sectors from SLDEM2015](https://imbrium.mit.edu/DATA/SLDEM2015/TILES/FLOAT_IMG/) (`SLDEM2015_512_*_FLOAT.IMG` and `SLDEM2015_512_*_FLOAT.LBL` files).
+ 3. Updated Large-Area DEM from ["A New View of the Lunar South Pole from LOLA"](https://pgda.gsfc.nasa.gov/products/90) (`LDEM_60S_60MPP_ADJ.TIF` file).
+ 4. `sldem-to-hips-normalmap` tool from this repo.
+
+Having downloaded LDEM512 to `~/LDEM_512`, SLDEM2015 to `~/SLDEM2015`, and the south-pole DEM file to `~`, you can now run the tool as follows.
+
+```bash
+sldem-to-hips-normalmap --format tiff ~/LDEM_512 --sldem ~/SLDEM2015 --ldem-south ~/LDEM_60S_60MPP_ADJ.TIF moon-normals
+```
+
+Similarly the albedo map, you'll want to convert the resulting tiles to the format you want and edit the `properties` file.
+
+### Horizon map
+
+For this you need the same data and tools as for the normal map, with an addition of `cubemap2hips-horizonmap` tool from this repo. The process of generation is as follows.
+
+First, generate a cubemap from all the DEM data:
+
+```bash
+sldem-to-hips-normalmap --format tiff ~/LDEM_512 --sldem ~/SLDEM2015 --ldem-south ~/LDEM_60S_60MPP_ADJ.TIF moon-cubemap --cubemap
+```
+Now you can use this cubemap to generate the actual horizon map.
+```bash
+cubemap2hips-horizonmap --format tiff --frame moon --title "Moon horizons SLDEM+LDEM+southLDEM" moon-cubemap moon-horizons
+```
+Similarly the albedo and normal maps, you'll want to convert the resulting tiles to the format you want and edit the `properties` file.

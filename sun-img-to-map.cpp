@@ -49,7 +49,7 @@ Vec2d obsXY(const double sunLat, const double sunLon,
 
     if(posRelToSun.transpose() * obsPos < 0.) return {M_PI, M_PI/2};
 
-    return Vec2d(atan2(posRelToObs[1], posRelToObs[0]),
+    return Vec2d(-atan2(posRelToObs[1], posRelToObs[0]),
                  asin(posRelToObs[2] / sqrt(posRelToObs.transpose() * posRelToObs)));
 }
 
@@ -85,7 +85,7 @@ Vec2d sampleImg(const uint16_t*const data, const int W, const int H, const int s
     const Vec2d pos = obsXY(sunLat, sunLon, carrLat, carrLon, sunObsDist);
     // FIXME: interpolate linearly instead of to nearest neighbour
     const ssize_t i = std::lround(marginLeft + imgWidth /2. + pos[0]/sunAngR*imgWidth/2.);
-    const ssize_t j = std::lround(marginTop  + imgHeight/2. + pos[1]/sunAngR*imgHeight/2.);
+    const ssize_t j = std::lround(marginTop  + imgHeight/2. - pos[1]/sunAngR*imgHeight/2.);
     if(marginLeft <= i && i < W - marginRight &&
        marginTop  <= j && j < H - marginBottom)
     {
@@ -175,7 +175,7 @@ try
 
     for(ssize_t j = 0; j < outH; ++j)
     {
-        const double sunLat = (double(j) - outH / 2.) / outH * M_PI;
+        const double sunLat = -(double(j) - outH / 2.) / outH * M_PI;
         for(ssize_t i = 0; i < outW; ++i)
         {
             const double sunLon = (double(i) - outW / 2.) / outW * (2 * M_PI);

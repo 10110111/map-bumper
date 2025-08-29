@@ -49,8 +49,10 @@ Vec2d obsXY(const double sunLat, const double sunLon,
 
     if(posRelToSun.transpose() * obsPos < 0.) return {M_PI, M_PI/2};
 
-    return Vec2d(-atan2(posRelToObs[1], posRelToObs[0]),
-                 asin(posRelToObs[2] / sqrt(posRelToObs.transpose() * posRelToObs)));
+    // The image is rotated by 180° from the north-at-top orientation,
+    // so the signs here are opposite to the theoretical ones.
+    return Vec2d(atan2(posRelToObs[1], posRelToObs[0]),
+                 -asin(posRelToObs[2] / sqrt(posRelToObs.transpose() * posRelToObs)));
 }
 
 void getMargins(const uint16_t*const data, const int W, const int H,

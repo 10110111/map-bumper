@@ -14,6 +14,9 @@ if(NOT HAVE_GLM)
     message(FATAL_ERROR "GLM was not found")
 endif()
 
+find_package(Eigen3 REQUIRED)
+include_directories(SYSTEM ${EIGEN3_INCLUDE_DIR})
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 find_package(Qt6Core 6.3 REQUIRED)
@@ -34,6 +37,14 @@ find_library(PROJ_LIB proj)
 if(NOT PROJ_LIB)
     unset(PROJ_LIB CACHE)
     message(FATAL_ERROR "proj library was not found")
+endif()
+
+include(FindPkgConfig)
+pkg_check_modules(CFITSIO cfitsio)
+if(CFITSIO_FOUND)
+    include_directories(${CFITSIO_INCLUDE_DIRS})
+else()
+    message(WARNING "cfitsio library wasn't found, so sun-img-to-map won't be built")
 endif()
 
 add_executable(equirect2cubemap equirect2cubemap.cpp)
@@ -87,3 +98,11 @@ target_compile_options(sldem-img2png PRIVATE -fno-strict-aliasing)
 
 add_executable(ldem-img2png ldem-img2png.cpp)
 target_link_libraries(ldem-img2png Qt6::Core Qt6::Gui)
+
+if(CFITSIO_FOUND)
+    add_executable(sun-img-to-map sun-img-to-map.cpp)
+    target_link_libraries(sun-img-to-map TIFF::TIFF ${CFITSIO_LIBRARIES})
+
+    add_executable(fits2tiff fits2tiff.cpp)
+    target_link_libraries(fits2tiff TIFF::TIFF ${CFITSIO_LIBRARIES})
+endif()

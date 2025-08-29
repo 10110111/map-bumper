@@ -106,6 +106,39 @@ try
 
     const std::string infile=argv[1];
     const std::string outfile=argv[2];
+    if(infile.size() < 4)
+        throw std::runtime_error("Input file name is strange (should end in .tiff or .tif), can't find out sidecar name");
+    std::string sidecar;
+    if(infile[infile.size() - 4] == '.' && infile.substr(infile.size() - 4) == ".tif")
+        sidecar = infile.substr(0, infile.size() - 4) + ".txt";
+    else if(infile.size() >= 5 && infile[infile.size() - 5] == '.' && infile.substr(infile.size() - 5) == ".tiff")
+        sidecar = infile.substr(0, infile.size() - 5) + ".txt";
+    else
+        throw std::runtime_error("Input file name is strange (should end in .tiff or .tif), can't find out sidecar name");
+    double carrLon = NAN;
+    double carrLat = NAN;
+    double sunObsDist = NAN;
+    {
+        std::ifstream s(sidecar);
+        if(!s) throw std::runtime_error("Failed to open sidecar file "+sidecar);
+        s.exceptions(std::ios_base::badbit);
+        while(s)
+        {
+            std::string name;
+            s >> name;
+            if(name == "DSUN_OBS")
+                s >> sunObsDist;
+            else if(name == "CRLN_OBS")
+                s >> carrLon;
+            else if(name == "CRLT_OBS")
+                s >> carrLat;
+        }
+        if(std::isnan(carrLon)) throw std::runtime_error("CRLN_OBS field is missing in the sidecar file");
+        if(std::isnan(carrLat)) throw std::runtime_error("CRLT_OBS field is missing in the sidecar file");
+        if(std::isnan(sunObsDist)) throw std::runtime_error("DSUN_OBS field is missing in the sidecar file");
+        carrLon *= M_PI / 180;
+        carrLat *= M_PI / 180;
+    }
 
     TIFF* tif = TIFFOpen(infile.c_str(), "r");
     if(!tif)
@@ -153,11 +186,6 @@ try
     getMargins(data.get(), width, height, stride, marginLeft, marginRight, marginTop, marginBottom);
     const int imgWidth = width - marginLeft - marginRight;
     const int imgHeight = height - marginTop - marginBottom;
-
-    // TODO: read these from a sidecar .txt file
-    const double carrLon = 207.310318 * M_PI / 180;
-    const double carrLat = 7.007775 * M_PI / 180;
-    const double sunObsDist = 151252300213.76;
 
     const double sunAngR = asin(sunR/sunObsDist);
 

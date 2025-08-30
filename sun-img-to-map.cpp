@@ -295,15 +295,16 @@ try
 
     const Float sunAngR = asin(sunR/sunObsDist);
 
-    constexpr ssize_t outH = 4096, outW = 2*outH, outBytesPP = 3, outSPP = 3;
-    std::unique_ptr<uint8_t[]> outScanLine(new uint8_t[outW * outBytesPP]);
+    constexpr ssize_t outH = 4096, outW = 2*outH, outSPP = 3;
+    std::unique_ptr<uint8_t[]> outScanLine(new uint8_t[outW * outSPP]);
+    constexpr ssize_t outBPS = sizeof outScanLine[0] * 8;
 
     TIFF*const tif = TIFFOpen(outfile.c_str(), "w");
     if(!tif) throw std::runtime_error("Failed to open file \"" + outfile + '"');
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, outW);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, outH);
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, outBytesPP * 8 / outSPP);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, outBPS);
     TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, outSPP);
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
 
@@ -316,7 +317,7 @@ try
             const auto samp = sampleImg(data.get(), width, height, stride, imgWidth, imgHeight,
                                         marginLeft, marginRight, marginTop, marginBottom,
                                         sunLat, sunLon, carrLat, carrLon, sunObsDist, sunAngR);
-            const ssize_t index = i * outBytesPP;
+            const ssize_t index = i * outSPP;
             const auto val = std::isnan(samp) ? 0 : samp / inputValueToOutputMax;
             const auto valR = val * 1;
             const auto valG = val * 0.890095;

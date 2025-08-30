@@ -30,6 +30,8 @@ public:
     const char* what() const noexcept override { return msg.c_str(); }
 };
 
+template<typename T> auto sqr(T x) { return x*x; }
+
 template<typename T> T step(T edge, T x) { return x<edge ? 0 : 1; }
 Float sRGBTransferFunction(const Float c)
 {
@@ -134,6 +136,9 @@ double sampleImg(const double*const data, const int W, const int H, const int st
                  const Float sunObsDist, const Float sunAngR)
 {
     const Vec2d pos = obsXY(sunLat, sunLon, carrLat, carrLon, sunObsDist);
+    if(pos.transpose()*pos > sqr(sunAngR*(imgWidth - 2)/imgWidth))
+        return NAN;
+
     const auto i = marginLeft + imgWidth /2. + pos[0]/sunAngR*imgWidth/2.;
     const auto j = marginTop  + imgHeight/2. - pos[1]/sunAngR*imgHeight/2.;
     if(marginLeft <= i && i < W - marginRight &&

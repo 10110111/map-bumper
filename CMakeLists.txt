@@ -101,5 +101,5 @@ target_link_libraries(ldem-img2png Qt6::Core Qt6::Gui)
 
 if(CFITSIO_FOUND)
     add_executable(sun-img-to-map sun-img-to-map.cpp)
-    target_link_libraries(sun-img-to-map tiff ${CFITSIO_LIBRARIES})
+    target_link_libraries(sun-img-to-map TIFF::TIFF ${CFITSIO_LIBRARIES})
 endif()

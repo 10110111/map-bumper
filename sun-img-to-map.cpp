@@ -77,6 +77,38 @@ void getMargins(const uint16_t*const data, const int W, const int H,
             ++bottom;
 }
 
+Vec2d fetchFromRect(uint16_t const*const data, const ssize_t stride, const ssize_t height,
+                    const ssize_t requestedX, const ssize_t requestedY)
+{
+    const auto x = std::clamp(requestedX, ssize_t(0), stride-1);
+    const auto y = std::clamp(requestedY, ssize_t(0), height-1);
+    return {data[y*stride + x * SAMP_PER_PX + 0],
+            data[y*stride + x * SAMP_PER_PX + 1]};
+}
+
+Vec2d sampleImg(const uint16_t*const data,
+                const ssize_t stride, const ssize_t height,
+                const double x, const double y)
+{
+    const auto floorX = std::floor(x);
+    const auto floorY = std::floor(y);
+
+    const auto pTopLeft     = fetchFromRect(data, stride, height, floorX  , floorY);
+    const auto pTopRight    = fetchFromRect(data, stride, height, floorX+1, floorY);
+    const auto pBottomLeft  = fetchFromRect(data, stride, height, floorX  , floorY+1);
+    const auto pBottomRight = fetchFromRect(data, stride, height, floorX+1, floorY+1);
+    // If at least one sample is invalid, discard the whole interpolant
+    if(!pTopLeft[1] || !pTopRight[1] || !pBottomLeft[1] || !pBottomRight[1])
+        return {NAN, 0};
+
+    const auto fracX = x - floorX;
+    const auto fracY = y - floorY;
+
+    const auto sampleLeft  = pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
+    const auto sampleRight = pTopRight + (pBottomRight-pTopRight)*fracY;
+    return sampleLeft + (sampleRight-sampleLeft)*fracX;
+}
+
 Vec2d sampleImg(const uint16_t*const data, const int W, const int H, const int stride,
                 const int imgWidth, const int imgHeight,
                 const int marginLeft, const int marginRight, const int marginTop, const int marginBottom,
@@ -85,14 +117,12 @@ Vec2d sampleImg(const uint16_t*const data, const int W, const int H, const int s
                 const double sunObsDist, const double sunAngR)
 {
     const Vec2d pos = obsXY(sunLat, sunLon, carrLat, carrLon, sunObsDist);
-    // FIXME: interpolate linearly instead of to nearest neighbour
-    const ssize_t i = std::lround(marginLeft + imgWidth /2. + pos[0]/sunAngR*imgWidth/2.);
-    const ssize_t j = std::lround(marginTop  + imgHeight/2. - pos[1]/sunAngR*imgHeight/2.);
+    const auto i = marginLeft + imgWidth /2. + pos[0]/sunAngR*imgWidth/2.;
+    const auto j = marginTop  + imgHeight/2. - pos[1]/sunAngR*imgHeight/2.;
     if(marginLeft <= i && i < W - marginRight &&
        marginTop  <= j && j < H - marginBottom)
     {
-        return {data[j * stride + i * SAMP_PER_PX + 0],
-                data[j * stride + i * SAMP_PER_PX + 1]};
+        return sampleImg(data, stride, H, i, j);
     }
     return {NAN, 0};
 }

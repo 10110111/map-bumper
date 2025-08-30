@@ -5,38 +5,40 @@
 #include <tiffio.h>
 #include <Eigen/Dense>
 
-using Vec2d = Eigen::Vector2d;
-using Vec3d = Eigen::Vector3d;
-using Mat3d = Eigen::Matrix3d;
+using Float = double;
+using Vec2d = Eigen::Matrix<Float, 2, 1>;
+using Vec3d = Eigen::Matrix<Float, 3, 1>;
+using Mat3d = Eigen::Matrix<Float, 3, 3>;
+constexpr Float PI = Float(3.141592653589793238462643383279502884L);
 
 constexpr int SAMP_PER_PX = 2;
-constexpr double sunR = 696000000.;
+constexpr Float sunR = 696000000;
 
 template<typename T> T step(T edge, T x) { return x<edge ? 0 : 1; }
-double sRGBTransferFunction(const double c)
+Float sRGBTransferFunction(const Float c)
 {
-    const auto s = step(0.0031308,c);
-    return s  * (1.055*std::pow(c, 1/2.4)-0.055) +
-        (1-s) *  12.92*c;
+    const auto s = step(Float(0.0031308L),c);
+    return s  * (Float(1.055L)*std::pow(c, 1/Float(2.4L))-Float(0.055L)) +
+        (1-s) *  Float(12.92L)*c;
 }
 
-Mat3d Ry(const double angle)
+Mat3d Ry(const Float angle)
 {
     Mat3d m;
-    m = Eigen::AngleAxisd(angle, -Vec3d::UnitY());
+    m = Eigen::AngleAxis<Float>(angle, -Vec3d::UnitY());
     return m;
 }
 
-Mat3d Rz(const double angle)
+Mat3d Rz(const Float angle)
 {
     Mat3d m;
-    m = Eigen::AngleAxisd(angle, Vec3d::UnitZ());
+    m = Eigen::AngleAxis<Float>(angle, Vec3d::UnitZ());
     return m;
 }
 
-Vec2d obsXY(const double sunLat, const double sunLon,
-            const double carrLat, const double carrLon,
-            const double distToObs)
+Vec2d obsXY(const Float sunLat, const Float sunLon,
+            const Float carrLat, const Float carrLon,
+            const Float distToObs)
 {
     using namespace std;
     const Vec3d obsPos = distToObs * Vec3d(cos(carrLat)*cos(carrLon),
@@ -45,9 +47,9 @@ Vec2d obsXY(const double sunLat, const double sunLon,
     const Vec3d posRelToSun = sunR * Vec3d(cos(sunLat)*cos(sunLon),
                                            cos(sunLat)*sin(sunLon),
                                            sin(sunLat));
-    const Vec3d posRelToObs = Rz(M_PI) * Ry(-carrLat) * Rz(-carrLon) * (posRelToSun - obsPos);
+    const Vec3d posRelToObs = Rz(PI) * Ry(-carrLat) * Rz(-carrLon) * (posRelToSun - obsPos);
 
-    if(posRelToSun.transpose() * obsPos < 0.) return {M_PI, M_PI/2};
+    if(posRelToSun.transpose() * obsPos < 0.) return {PI, PI/2};
 
     // The image is rotated by 180° from the north-at-top orientation,
     // so the signs here are opposite to the theoretical ones.
@@ -88,7 +90,7 @@ Vec2d fetchFromRect(uint16_t const*const data, const ssize_t stride, const ssize
 
 Vec2d sampleImg(const uint16_t*const data,
                 const ssize_t stride, const ssize_t height,
-                const double x, const double y)
+                const Float x, const Float y)
 {
     const auto floorX = std::floor(x);
     const auto floorY = std::floor(y);
@@ -112,9 +114,9 @@ Vec2d sampleImg(const uint16_t*const data,
 Vec2d sampleImg(const uint16_t*const data, const int W, const int H, const int stride,
                 const int imgWidth, const int imgHeight,
                 const int marginLeft, const int marginRight, const int marginTop, const int marginBottom,
-                const double sunLat, const double sunLon,
-                const double carrLat, const double carrLon,
-                const double sunObsDist, const double sunAngR)
+                const Float sunLat, const Float sunLon,
+                const Float carrLat, const Float carrLon,
+                const Float sunObsDist, const Float sunAngR)
 {
     const Vec2d pos = obsXY(sunLat, sunLon, carrLat, carrLon, sunObsDist);
     const auto i = marginLeft + imgWidth /2. + pos[0]/sunAngR*imgWidth/2.;
@@ -147,9 +149,9 @@ try
         sidecar = infile.substr(0, infile.size() - 5) + ".txt";
     else
         throw std::runtime_error("Input file name is strange (should end in .tiff or .tif), can't find out sidecar name");
-    double carrLon = NAN;
-    double carrLat = NAN;
-    double sunObsDist = NAN;
+    Float carrLon = NAN;
+    Float carrLat = NAN;
+    Float sunObsDist = NAN;
     {
         std::ifstream s(sidecar);
         if(!s) throw std::runtime_error("Failed to open sidecar file "+sidecar);
@@ -168,8 +170,8 @@ try
         if(std::isnan(carrLon)) throw std::runtime_error("CRLN_OBS field is missing in the sidecar file");
         if(std::isnan(carrLat)) throw std::runtime_error("CRLT_OBS field is missing in the sidecar file");
         if(std::isnan(sunObsDist)) throw std::runtime_error("DSUN_OBS field is missing in the sidecar file");
-        carrLon *= M_PI / 180;
-        carrLat *= M_PI / 180;
+        carrLon *= PI / 180;
+        carrLat *= PI / 180;
     }
 
     TIFF* tif = TIFFOpen(infile.c_str(), "r");
@@ -219,7 +221,7 @@ try
     const int imgWidth = width - marginLeft - marginRight;
     const int imgHeight = height - marginTop - marginBottom;
 
-    const double sunAngR = asin(sunR/sunObsDist);
+    const Float sunAngR = asin(sunR/sunObsDist);
 
     constexpr ssize_t outH = 4096, outW = 2*outH, outBytesPP = 1, outSPP = 1;
     std::unique_ptr<uint8_t[]> outScanLine(new uint8_t[outW * outBytesPP]);
@@ -235,10 +237,10 @@ try
 
     for(ssize_t j = 0; j < outH; ++j)
     {
-        const double sunLat = -(double(j) - outH / 2.) / outH * M_PI;
+        const Float sunLat = -(Float(j) - outH / Float(2)) / outH * PI;
         for(ssize_t i = 0; i < outW; ++i)
         {
-            const double sunLon = (double(i) - outW / 2.) / outW * (2 * M_PI);
+            const Float sunLon = (Float(i) - outW / Float(2)) / outW * (2 * PI);
             const auto samp = sampleImg(data.get(), width, height, stride, imgWidth, imgHeight,
                                         marginLeft, marginRight, marginTop, marginBottom,
                                         sunLat, sunLon, carrLat, carrLon, sunObsDist, sunAngR);

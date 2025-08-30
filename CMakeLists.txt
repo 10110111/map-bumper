@@ -92,4 +92,4 @@ add_executable(ldem-img2png ldem-img2png.cpp)
 target_link_libraries(ldem-img2png Qt6::Core Qt6::Gui)
 
 add_executable(sun-img-to-map sun-img-to-map.cpp)
-target_link_libraries(sun-img-to-map tiff)
+target_link_libraries(sun-img-to-map tiff cfitsio)

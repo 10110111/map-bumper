@@ -296,7 +296,8 @@ try
     const Float sunAngR = asin(sunR/sunObsDist);
 
     constexpr ssize_t outH = 4096, outW = 2*outH, outSPP = 3;
-    std::unique_ptr<uint8_t[]> outScanLine(new uint8_t[outW * outSPP]);
+    using OutType = uint8_t;
+    std::unique_ptr<OutType[]> outScanLine(new OutType[outW * outSPP]);
     constexpr ssize_t outBPS = sizeof outScanLine[0] * 8;
 
     TIFF*const tif = TIFFOpen(outfile.c_str(), "w");
@@ -308,6 +309,7 @@ try
     TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, outSPP);
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
 
+    constexpr auto OUT_VAL_MAX = std::numeric_limits<std::remove_reference_t<decltype(outScanLine[0])>>::max();
     for(ssize_t j = 0; j < outH; ++j)
     {
         const Float sunLat = -(Float(j) - outH / Float(2)) / outH * PI;
@@ -322,9 +324,9 @@ try
             const auto valR = val * 1;
             const auto valG = val * 0.890095;
             const auto valB = val * 0.859308;
-            outScanLine[index + 0] = 255 * sRGBTransferFunction(std::clamp(valR, 0., 1.));
-            outScanLine[index + 1] = 255 * sRGBTransferFunction(std::clamp(valG, 0., 1.));
-            outScanLine[index + 2] = 255 * sRGBTransferFunction(std::clamp(valB, 0., 1.));
+            outScanLine[index + 0] = OUT_VAL_MAX * sRGBTransferFunction(std::clamp(valR, 0., 1.));
+            outScanLine[index + 1] = OUT_VAL_MAX * sRGBTransferFunction(std::clamp(valG, 0., 1.));
+            outScanLine[index + 2] = OUT_VAL_MAX * sRGBTransferFunction(std::clamp(valB, 0., 1.));
         }
         if(TIFFWriteScanline(tif, outScanLine.get(), j, 0) != 1)
             throw std::runtime_error("Failed to write scan line "+std::to_string(j + 1));

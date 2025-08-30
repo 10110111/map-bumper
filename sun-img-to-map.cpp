@@ -317,7 +317,8 @@ try
                                         marginLeft, marginRight, marginTop, marginBottom,
                                         sunLat, sunLon, carrLat, carrLon, sunObsDist, sunAngR);
             const ssize_t index = i * outBytesPP;
-            outScanLine[index] = std::isnan(samp) ? 0 : samp / inputValueToOutputMax * 255.;
+            const auto val = std::isnan(samp) ? 0 : samp / inputValueToOutputMax;
+            outScanLine[index] =  255 * sRGBTransferFunction(std::clamp(val, 0., 1.));
         }
         if(TIFFWriteScanline(tif, outScanLine.get(), j, 0) != 1)
             throw std::runtime_error("Failed to write scan line "+std::to_string(j + 1));

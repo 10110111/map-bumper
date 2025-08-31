@@ -75,28 +75,6 @@ Vec2d obsXY(const Float sunLat, const Float sunLon,
                  -asin(posRelToObs[2] / sqrt(posRelToObs.transpose() * posRelToObs)));
 }
 
-void getMargins(const double*const data, const int W, const int H,
-                const int stride,
-                int& left, int& right, int& top, int& bottom)
-{
-    left = 0;
-    for(int n = 0; n < W/2; ++n)
-        if(std::isnan(data[H/2 * stride + n]))
-            ++left;
-    right = 0;
-    for(int n = W - 1; n >= W/2; --n)
-        if(std::isnan(data[H/2 * stride + n]))
-            ++right;
-    top = 0;
-    for(int n = 0; n < H/2; ++n)
-        if(std::isnan(data[n * stride + W/2]))
-            ++top;
-    bottom = 0;
-    for(int n = H - 1; n >= H/2; --n)
-        if(std::isnan(data[n * stride + W/2]))
-            ++bottom;
-}
-
 double fetchFromRect(double const*const data, const ssize_t stride, const ssize_t height,
                      const ssize_t requestedX, const ssize_t requestedY)
 {
@@ -129,23 +107,18 @@ double sampleImg(const double*const data,
 }
 
 double sampleImg(const double*const data, const int W, const int H, const int stride,
-                 const int imgWidth, const int imgHeight,
-                 const int marginLeft, const int marginRight, const int marginTop, const int marginBottom,
+                 const double centerX, const double centerY,
+                 const double scaleX, const double scaleY,
                  const Float sunLat, const Float sunLon,
                  const Float carrLat, const Float carrLon,
-                 const Float sunObsDist, const Float sunAngR)
+                 const Float sunObsDist)
 {
     const Vec2d pos = obsXY(sunLat, sunLon, carrLat, carrLon, sunObsDist);
-    if(pos.transpose()*pos > sqr(sunAngR*(imgWidth - 2)/imgWidth))
-        return NAN;
 
-    const auto i = marginLeft + imgWidth /2. + pos[0]/sunAngR*imgWidth/2.;
-    const auto j = marginTop  + imgHeight/2. - pos[1]/sunAngR*imgHeight/2.;
-    if(marginLeft <= i && i < W - marginRight &&
-       marginTop  <= j && j < H - marginBottom)
-    {
+    const auto i = centerX + pos[0]/scaleX;
+    const auto j = H - 1 - (centerY + pos[1]/scaleY);
+    if(0 <= i && i < W && 0 <= j && j < H)
         return sampleImg(data, stride, H, i, j);
-    }
     return NAN;
 }
 
@@ -224,6 +197,8 @@ try
     Float carrLon = NAN;
     Float carrLat = NAN;
     Float sunObsDist = NAN;
+    Float centerX = NAN, centerY = NAN;
+    Float scaleX = NAN, scaleY = NAN;
     {
         std::ifstream s(sidecar);
         if(!s) throw std::runtime_error("Failed to open sidecar file "+sidecar);
@@ -238,12 +213,26 @@ try
                 s >> carrLon;
             else if(name == "CRLT_OBS")
                 s >> carrLat;
+            else if(name == "CRPIX1")
+                s >> centerX;
+            else if(name == "CRPIX2")
+                s >> centerY;
+            else if(name == "CDELT1")
+                s >> scaleX;
+            else if(name == "CDELT2")
+                s >> scaleY;
         }
         if(std::isnan(carrLon)) throw std::runtime_error("CRLN_OBS field is missing in the sidecar file");
         if(std::isnan(carrLat)) throw std::runtime_error("CRLT_OBS field is missing in the sidecar file");
         if(std::isnan(sunObsDist)) throw std::runtime_error("DSUN_OBS field is missing in the sidecar file");
+        if(std::isnan(centerX)) throw std::runtime_error("CRPIX1 field is missing in the sidecar file");
+        if(std::isnan(centerY)) throw std::runtime_error("CRPIX2 field is missing in the sidecar file");
+        if(std::isnan(scaleX)) throw std::runtime_error("CDELT1 field is missing in the sidecar file");
+        if(std::isnan(scaleY)) throw std::runtime_error("CDELT2 field is missing in the sidecar file");
         carrLon *= PI / 180;
         carrLat *= PI / 180;
+        scaleX *= PI / 180 / 3600;
+        scaleY *= PI / 180 / 3600;
     }
 
     fitsfile* fits;
@@ -293,13 +282,6 @@ try
     }
     std::cerr << "Minimum value: " << minVal << ", maximum value: " << maxVal << "\n";
 
-    int marginLeft, marginRight, marginTop, marginBottom;
-    getMargins(data.get(), width, height, stride, marginLeft, marginRight, marginTop, marginBottom);
-    const int imgWidth = width - marginLeft - marginRight;
-    const int imgHeight = height - marginTop - marginBottom;
-
-    const Float sunAngR = asin(sunR/sunObsDist);
-
     constexpr ssize_t outH = 4096, outW = 2*outH, outSPP = 3;
     using OutType = uint8_t;
     std::unique_ptr<OutType[]> outScanLine(new OutType[outW * outSPP]);
@@ -321,9 +303,8 @@ try
         for(ssize_t i = 0; i < outW; ++i)
         {
             const Float sunLon = (Float(i) - outW / Float(2)) / outW * (2 * PI);
-            const auto samp = sampleImg(data.get(), width, height, stride, imgWidth, imgHeight,
-                                        marginLeft, marginRight, marginTop, marginBottom,
-                                        sunLat, sunLon, carrLat, carrLon, sunObsDist, sunAngR);
+            const auto samp = sampleImg(data.get(), width, height, stride, centerX, centerY,
+                                        scaleX, scaleY, sunLat, sunLon, carrLat, carrLon, sunObsDist);
             const ssize_t index = i * outSPP;
             const auto val = std::isnan(samp) ? 0 : samp / inputValueToOutputMax;
             const auto valR = val * 1;

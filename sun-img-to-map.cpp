@@ -233,6 +233,8 @@ try
         carrLat *= PI / 180;
         scaleX *= PI / 180 / 3600;
         scaleY *= PI / 180 / 3600;
+        centerX -= 1;
+        centerY -= 1;
     }
 
     fitsfile* fits;

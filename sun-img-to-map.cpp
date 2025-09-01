@@ -189,54 +189,6 @@ try
     }
 #undef REQUIRE_PARAM
 
-    std::string sidecar;
-    if(infile.size() >= 5 && infile[infile.size() - 5] == '.' && infile.substr(infile.size() - 5) == ".fits")
-        sidecar = infile.substr(0, infile.size() - 5) + ".txt";
-    else
-        throw std::runtime_error("Input file name is strange (should end in .fits), can't find out sidecar name");
-    Float carrLon = NAN;
-    Float carrLat = NAN;
-    Float sunObsDist = NAN;
-    Float centerX = NAN, centerY = NAN;
-    Float scaleX = NAN, scaleY = NAN;
-    {
-        std::ifstream s(sidecar);
-        if(!s) throw std::runtime_error("Failed to open sidecar file "+sidecar);
-        s.exceptions(std::ios_base::badbit);
-        while(s)
-        {
-            std::string name;
-            s >> name;
-            if(name == "DSUN_OBS")
-                s >> sunObsDist;
-            else if(name == "CRLN_OBS")
-                s >> carrLon;
-            else if(name == "CRLT_OBS")
-                s >> carrLat;
-            else if(name == "CRPIX1")
-                s >> centerX;
-            else if(name == "CRPIX2")
-                s >> centerY;
-            else if(name == "CDELT1")
-                s >> scaleX;
-            else if(name == "CDELT2")
-                s >> scaleY;
-        }
-        if(std::isnan(carrLon)) throw std::runtime_error("CRLN_OBS field is missing in the sidecar file");
-        if(std::isnan(carrLat)) throw std::runtime_error("CRLT_OBS field is missing in the sidecar file");
-        if(std::isnan(sunObsDist)) throw std::runtime_error("DSUN_OBS field is missing in the sidecar file");
-        if(std::isnan(centerX)) throw std::runtime_error("CRPIX1 field is missing in the sidecar file");
-        if(std::isnan(centerY)) throw std::runtime_error("CRPIX2 field is missing in the sidecar file");
-        if(std::isnan(scaleX)) throw std::runtime_error("CDELT1 field is missing in the sidecar file");
-        if(std::isnan(scaleY)) throw std::runtime_error("CDELT2 field is missing in the sidecar file");
-        carrLon *= PI / 180;
-        carrLat *= PI / 180;
-        scaleX *= PI / 180 / 3600;
-        scaleY *= PI / 180 / 3600;
-        centerX -= 1;
-        centerY -= 1;
-    }
-
     fitsfile* fits;
     int status = 0;
     if(fits_open_diskfile(&fits, infile.c_str(), READONLY, &status))
@@ -273,6 +225,68 @@ try
         fits_read_pix(fits, TDOUBLE, fpixel, width, &nullVal, data.get() + width * j, nullptr, &status);
         if(status) throw FITSError("Failed to read pixels from the FITS image", status);
     }
+
+    Float carrLon = NAN;
+    Float carrLat = NAN;
+    Float sunObsDist = NAN;
+    Float centerX = NAN, centerY = NAN;
+    Float scaleX = NAN, scaleY = NAN;
+
+    fits_read_key(fits, TDOUBLE, "DSUN_OBS", &sunObsDist, nullptr, &status); if(status) sunObsDist = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "CRLN_OBS", &carrLon, nullptr, &status); if(status) carrLon = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "CRLT_OBS", &carrLat, nullptr, &status); if(status) carrLat = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "CRPIX1", &centerX, nullptr, &status); if(status) centerX = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "CRPIX2", &centerY, nullptr, &status); if(status) centerY = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "CDELT1", &scaleX, nullptr, &status); if(status) scaleX = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "CDELT2", &scaleY, nullptr, &status); if(status) scaleY = NAN; status = 0;
+
+    if(std::isnan(carrLon) || std::isnan(carrLat) || std::isnan(sunObsDist) ||
+       std::isnan(centerX) || std::isnan(centerY) || std::isnan(scaleX) || std::isnan(scaleY))
+    {
+        std::cerr << "Some keywords aren't defined in the FITS header, trying to read them from the sidecar file...\n";
+        std::string sidecar;
+        if(infile.size() >= 5 && infile[infile.size() - 5] == '.' && infile.substr(infile.size() - 5) == ".fits")
+            sidecar = infile.substr(0, infile.size() - 5) + ".txt";
+        else
+            throw std::runtime_error("Input file name is strange (should end in .fits), can't find out sidecar name");
+        std::ifstream s(sidecar);
+        if(!s) throw std::runtime_error("Failed to open sidecar file "+sidecar);
+        s.exceptions(std::ios_base::badbit);
+        while(s)
+        {
+            std::string name;
+            s >> name;
+            if(name == "DSUN_OBS")
+                s >> sunObsDist;
+            else if(name == "CRLN_OBS")
+                s >> carrLon;
+            else if(name == "CRLT_OBS")
+                s >> carrLat;
+            else if(name == "CRPIX1")
+                s >> centerX;
+            else if(name == "CRPIX2")
+                s >> centerY;
+            else if(name == "CDELT1")
+                s >> scaleX;
+            else if(name == "CDELT2")
+                s >> scaleY;
+        }
+    }
+    if(std::isnan(carrLon)) throw std::runtime_error("CRLN_OBS field is missing in the sidecar file");
+    if(std::isnan(carrLat)) throw std::runtime_error("CRLT_OBS field is missing in the sidecar file");
+    if(std::isnan(sunObsDist)) throw std::runtime_error("DSUN_OBS field is missing in the sidecar file");
+    if(std::isnan(centerX)) throw std::runtime_error("CRPIX1 field is missing in the sidecar file");
+    if(std::isnan(centerY)) throw std::runtime_error("CRPIX2 field is missing in the sidecar file");
+    if(std::isnan(scaleX)) throw std::runtime_error("CDELT1 field is missing in the sidecar file");
+    if(std::isnan(scaleY)) throw std::runtime_error("CDELT2 field is missing in the sidecar file");
+    carrLon *= PI / 180;
+    carrLat *= PI / 180;
+    scaleX *= PI / 180 / 3600;
+    scaleY *= PI / 180 / 3600;
+    centerX -= 1;
+    centerY -= 1;
+    std::cerr << "All keywords read successfully\n";
+
     double minVal = INFINITY, maxVal = -INFINITY;
     const ssize_t N = ssize_t(width) * height;
     for(ssize_t i = 0; i < N; ++i)

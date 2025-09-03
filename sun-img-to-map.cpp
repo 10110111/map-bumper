@@ -318,7 +318,7 @@ try
         const Float sunLat = -(Float(j) - outH / Float(2)) / outH * PI;
         for(ssize_t i = 0; i < outW; ++i)
         {
-            const Float sunLon = (Float(i) - outW / Float(2)) / outW * (2 * PI);
+            const Float sunLon = (Float(i + 0.5) - outW / Float(2)) / outW * (2 * PI);
             const auto samp = sampleImg(data.get(), width, height, stride, centerX, centerY,
                                         scaleX, scaleY, sunLat, sunLon, carrLat, carrLon, sunObsDist);
             const ssize_t index = i * outSPP;

@@ -129,6 +129,8 @@ int usage(const char*const argv0, const int ret)
 Options:
  --help                 Show this help message and quit
  -m,--max NUM           Normalize output values so that NUM in the input becomes the highest value of the output
+ --crlt NUM             Override Carrington latitude
+ --crln NUM             Override Carrington longitude
 )";
     return ret;
 }
@@ -143,6 +145,8 @@ try
     std::string outfile;
     int totalPositionalArgumentsFound = 0;
     double inputValueToOutputMax = 2;
+    Float carrLon = NAN;
+    Float carrLat = NAN;
     for(int n = 1; n < argc; ++n)
     {
 #define REQUIRE_PARAM() do{                                                 \
@@ -180,6 +184,16 @@ try
         {
             REQUIRE_PARAM();
             inputValueToOutputMax = std::stod(argv[++n]);
+        }
+        else if(arg == "--crlt")
+        {
+            REQUIRE_PARAM();
+            carrLat = std::stod(argv[++n]);
+        }
+        else if(arg == "--crln")
+        {
+            REQUIRE_PARAM();
+            carrLon = std::stod(argv[++n]);
         }
         else
         {
@@ -226,15 +240,15 @@ try
         if(status) throw FITSError("Failed to read pixels from the FITS image", status);
     }
 
-    Float carrLon = NAN;
-    Float carrLat = NAN;
     Float sunObsDist = NAN;
     Float centerX = NAN, centerY = NAN;
     Float scaleX = NAN, scaleY = NAN;
 
-    fits_read_key(fits, TDOUBLE, "DSUN_OBS", &sunObsDist, nullptr, &status); if(status) sunObsDist = NAN; status = 0;
-    fits_read_key(fits, TDOUBLE, "CRLN_OBS", &carrLon, nullptr, &status); if(status) carrLon = NAN; status = 0;
+    if(std::isnan(carrLon))
+        fits_read_key(fits, TDOUBLE, "CRLN_OBS", &carrLon, nullptr, &status); if(status) carrLon = NAN; status = 0;
+    if(std::isnan(carrLat))
     fits_read_key(fits, TDOUBLE, "CRLT_OBS", &carrLat, nullptr, &status); if(status) carrLat = NAN; status = 0;
+    fits_read_key(fits, TDOUBLE, "DSUN_OBS", &sunObsDist, nullptr, &status); if(status) sunObsDist = NAN; status = 0;
     fits_read_key(fits, TDOUBLE, "CRPIX1", &centerX, nullptr, &status); if(status) centerX = NAN; status = 0;
     fits_read_key(fits, TDOUBLE, "CRPIX2", &centerY, nullptr, &status); if(status) centerY = NAN; status = 0;
     fits_read_key(fits, TDOUBLE, "CDELT1", &scaleX, nullptr, &status); if(status) scaleX = NAN; status = 0;
@@ -256,19 +270,19 @@ try
         {
             std::string name;
             s >> name;
-            if(name == "DSUN_OBS")
+            if(name == "DSUN_OBS" && std::isnan(sunObsDist))
                 s >> sunObsDist;
-            else if(name == "CRLN_OBS")
+            else if(name == "CRLN_OBS" && std::isnan(carrLon))
                 s >> carrLon;
-            else if(name == "CRLT_OBS")
+            else if(name == "CRLT_OBS" && std::isnan(carrLat))
                 s >> carrLat;
-            else if(name == "CRPIX1")
+            else if(name == "CRPIX1" && std::isnan(centerX))
                 s >> centerX;
-            else if(name == "CRPIX2")
+            else if(name == "CRPIX2" && std::isnan(centerY))
                 s >> centerY;
-            else if(name == "CDELT1")
+            else if(name == "CDELT1" && std::isnan(scaleX))
                 s >> scaleX;
-            else if(name == "CDELT2")
+            else if(name == "CDELT2" && std::isnan(scaleY))
                 s >> scaleY;
         }
     }

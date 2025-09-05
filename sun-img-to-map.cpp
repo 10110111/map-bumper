@@ -128,7 +128,8 @@ int usage(const char*const argv0, const int ret)
  input output
 Options:
  --help                 Show this help message and quit
- -m,--max NUM           Normalize output values so that NUM in the input becomes the highest value of the output
+ --min NUM              Normalize output values so that NUM in the input becomes the smallest value of the output
+ --max NUM              Normalize output values so that NUM in the input becomes the highest value of the output
  --crlt NUM             Override Carrington latitude
  --crln NUM             Override Carrington longitude
 )";
@@ -145,6 +146,7 @@ try
     std::string outfile;
     int totalPositionalArgumentsFound = 0;
     double inputValueToOutputMax = 2;
+    double inputValueToOutputMin = 0;
     Float carrLon = NAN;
     Float carrLat = NAN;
     for(int n = 1; n < argc; ++n)
@@ -180,7 +182,12 @@ try
         {
             return usage(argv[0], 0);
         }
-        else if(arg == "-m" || arg == "--max")
+        else if(arg == "--min")
+        {
+            REQUIRE_PARAM();
+            inputValueToOutputMin = std::stod(argv[++n]);
+        }
+        else if(arg == "--max")
         {
             REQUIRE_PARAM();
             inputValueToOutputMax = std::stod(argv[++n]);
@@ -336,7 +343,8 @@ try
             const auto samp = sampleImg(data.get(), width, height, stride, centerX, centerY,
                                         scaleX, scaleY, sunLat, sunLon, carrLat, carrLon, sunObsDist);
             const ssize_t index = i * outSPP;
-            const auto val = std::isnan(samp) ? 0 : samp / inputValueToOutputMax;
+            const auto val = std::isnan(samp) ? 0 :
+                (samp - inputValueToOutputMin) / (inputValueToOutputMax - inputValueToOutputMin);
             const auto valR = val * 1;
             const auto valG = val * 0.890095;
             const auto valB = val * 0.859308;

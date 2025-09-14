@@ -92,6 +92,9 @@ target_link_libraries(moonkit-poles-recolor Qt6::Core Qt6::Gui)
 add_executable(combine-lroc-and-moonkit combine-lroc-and-moonkit.cpp)
 target_link_libraries(combine-lroc-and-moonkit Qt6::Core Qt6::Gui)
 
+add_executable(sun-map-connect sun-map-connect.cpp)
+target_link_libraries(sun-map-connect Qt6::Core Qt6::Gui)
+
 add_executable(sldem-img2png sldem-img2png.cpp)
 target_link_libraries(sldem-img2png Qt6::Core Qt6::Gui)
 target_compile_options(sldem-img2png PRIVATE -fno-strict-aliasing)

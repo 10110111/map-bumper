@@ -30,7 +30,7 @@ This will yield two directories containing `*.tiff` files that will be fed to th
 ```bash
 convert sectors-hapke/E350N{225,315,045,135}0.tiff +append n.tiff
 convert sectors-hapke/E350S{225,315,045,135}0.tiff +append s.tiff
-convert /tmp/{n,s}.tiff -append sectors-hapke-combined.tiff
+convert {n,s}.tiff -append sectors-hapke-combined.tiff
 rm {s,n}.tiff
 ```
 Finally, you can generate the HiPS tiles with the following command:

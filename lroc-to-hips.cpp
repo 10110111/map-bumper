@@ -156,17 +156,101 @@ double sRGBInverseTransferFunction(const double srgb)
 	       d * srgb/12.92;
 }
 
-double empToRed(const double x)
+double empToRed(const double x, const double lon, const double lat)
 {
-    return 1.63879529179947*x;
+    constexpr double PI = M_PI;
+    if(lat < 0)
+    {
+        const double r = (PI/2 + lat) / ((90 - 70) * PI / 180);
+        const double r2 = r*r;
+        const double r3 = r2*r;
+        return x *
+               (9.08617789160424 + r*cos(lon) + 0.2094270102229348*r2*cos(2*(lon + PI)) + 0.1490437731690924*r3*cos(3*(lon + PI)) -
+                0.2789006239867136*r*sin(lon) - 0.5014459534312736*r2*sin(2*(lon + PI)) - 0.5129670453772869*r3*sin(3*(lon + PI)))
+                                                                    /
+               (5.919064090108278 +
+                0.65194174632201190*r*cos(lon) + 0.20942016254585352*r2*cos(2*(lon + PI)) + 0.10057140731911288*r3*cos(3*(lon + PI)) -
+                0.16336596272597545*r*sin(lon) - 0.27991274292544255*r2*sin(2*(lon + PI)) - 0.33717656278579110*r3*sin(3*(lon + PI)))
+                                                                    ;
+    }
+    else
+    {
+        const double r = (PI/2 - lat) / ((90 - 70) * PI / 180);
+        const double r2 = r*r;
+        const double r3 = r2*r;
+        return x *
+               (18.034454013991404 + r*cos(lon) - 0.4345698349619620*r2*cos(2*(lon + PI)) - 0.1730334474676742*r3*cos(3*(lon + PI)) +
+                0.6830217975120059 * r*sin(lon) - 0.6586493467037962*r2*sin(2*(lon + PI)) + 0.8273972743674709*r3*sin(3*(lon + PI)))
+                                                                    /
+               (11.864375187315154 +
+                0.76541540001983150*r*cos(lon) - 0.23153832556531215*r2*cos(2*(lon + PI)) - 0.12599561590820352*r3*cos(3*(lon + PI)) +
+                0.48506666131023424*r*sin(lon) - 0.46478065132830876*r2*sin(2*(lon + PI)) + 0.50390690546784380*r3*sin(3*(lon + PI)))
+                                                                    ;
+    }
 }
-double empToGreen(const double x)
+double empToGreen(const double x, const double lon, const double lat)
 {
-    return 1.22804568919149*x;
+    constexpr double PI = M_PI;
+    if(lat < 0)
+    {
+        const double r = (PI/2 + lat) / ((90 - 70) * PI / 180);
+        const double r2 = r*r;
+        const double r3 = r2*r;
+        return x *
+               (8.314560480826950+r*cos(lon) + 0.19178740432702773*r2*cos(2*(lon + PI)) + 0.16971768410906835*r3*cos(3*(lon + PI)) -
+                0.292226486858174*r*sin(lon) - 0.51746044230973050*r2*sin(2*(lon + PI)) - 0.48463412059223643*r3*sin(3*(lon + PI)))
+                                                                    /
+               (7.203142849483428 +
+                0.79337365786374410*r*cos(lon) + 0.25485166631338624*r2*cos(2*(lon + PI)) + 0.12238931737600109*r3*cos(3*(lon + PI)) -
+                0.19880649176026408*r*sin(lon) - 0.34063687130068077*r2*sin(2*(lon + PI)) - 0.41032347517619840*r3*sin(3*(lon + PI)))
+                                                                    ;
+    }
+    else
+    {
+        const double r = (PI/2 - lat) / ((90 - 70) * PI / 180);
+        const double r2 = r*r;
+        const double r3 = r2*r;
+        return x *
+               (16.299511190548507+r*cos(lon) - 0.40891051668851935*r2*cos(2*(lon + PI)) - 0.18106562828383546*r3*cos(3*(lon + PI)) +
+                0.7052590279928693*r*sin(lon) - 0.62250920969539040*r2*sin(2*(lon + PI)) + 0.78809756405954090*r3*sin(3*(lon + PI)))
+                                                                    /
+               (14.2274852454926 +
+                0.9178685045376844*r*cos(lon) - 0.2776554229563270*r2*cos(2*(lon + PI)) - 0.15109103834201776*r3*cos(3*(lon + PI)) +
+                0.5816807592405072*r*sin(lon) - 0.5573542436717532*r2*sin(2*(lon + PI)) + 0.60427354575828810*r3*sin(3*(lon + PI)))
+                                                                    ;
+    }
 }
-double empToBlue(const double x)
+double empToBlue(const double x, const double lon, const double lat)
 {
-    return 0.926077092900726*x;
+    constexpr double PI = M_PI;
+    if(lat < 0)
+    {
+        const double r = (PI/2 + lat) / ((90 - 70) * PI / 180);
+        const double r2 = r*r;
+        const double r3 = r2*r;
+        return x *
+               (7.5182390052249750+r*cos(lon) + 0.16416593369496188*r2*cos(2*(lon + PI)) + 0.18193794123524465*r3*cos(3*(lon + PI)) -
+                0.2740888215065235*r*sin(lon) - 0.51829680361104250*r2*sin(2*(lon + PI)) - 0.45091205800768436*r3*sin(3*(lon + PI)))
+                                                                    /
+               (8.683697038188974 +
+                0.95644590520131360*r*cos(lon) + 0.30723459275860193*r2*cos(2*(lon + PI)) + 0.14754556101579588*r3*cos(3*(lon + PI)) -
+                0.23966973580083203*r*sin(lon) - 0.41065232943753310*r2*sin(2*(lon + PI)) - 0.49466251336977020*r3*sin(3*(lon + PI)))
+                                                                    ;
+    }
+    else
+    {
+        const double r = (PI/2 - lat) / ((90 - 70) * PI / 180);
+        const double r2 = r*r;
+        const double r3 = r2*r;
+        return x *
+               (14.026755652524963+r*cos(lon) - 0.3884757975572265*r2*cos(2*(lon + PI)) - 0.16588908530583166*r3*cos(3*(lon + PI)) +
+                0.6997034457568012*r*sin(lon) - 0.5853193082785430*r2*sin(2*(lon + PI)) + 0.73056993587859400*r3*sin(3*(lon + PI)))
+                                                                    /
+               (16.329657978362214 +
+                1.0534875622492514*r*cos(lon) - 0.31868021751424686*r2*cos(2*(lon + PI)) - 0.17341539542291312*r3*cos(3*(lon + PI)) +
+                0.6676266175711410*r*sin(lon) - 0.63970575368067180*r2*sin(2*(lon + PI)) + 0.69355758641402880*r3*sin(3*(lon + PI)))
+                                                                    ;
+    }
 }
 
 constexpr int DOWNSAMP_FACTOR = 4;
@@ -210,12 +294,12 @@ void fillFace(const int order, const int pix, const uint8_t*const data,
             const auto refR = sRGBInverseTransferFunction(refRsRGB);
             const auto refG = sRGBInverseTransferFunction(refGsRGB);
             const auto refB = sRGBInverseTransferFunction(refBsRGB);
-            const double smallR = empToRed(std::abs(sampSm));
-            const double smallG = empToGreen(std::abs(sampSm));
-            const double smallB = empToBlue(std::abs(sampSm));
-            const double red   = empToRed(std::abs(samp));
-            const double green = empToGreen(std::abs(samp));
-            const double blue  = empToBlue(std::abs(samp));
+            const double smallR = empToRed(std::abs(sampSm), longitude, latitude);
+            const double smallG = empToGreen(std::abs(sampSm), longitude, latitude);
+            const double smallB = empToBlue(std::abs(sampSm), longitude, latitude);
+            const double red   = empToRed(std::abs(samp), longitude, latitude);
+            const double green = empToGreen(std::abs(samp), longitude, latitude);
+            const double blue  = empToBlue(std::abs(samp), longitude, latitude);
             if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
             {
                 outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));

@@ -302,18 +302,22 @@ void fillFace(const int order, const int pix, const uint8_t*const data,
             const double blue  = empToBlue(std::abs(samp), longitude, latitude);
             if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
             {
+                // No Hapke-normalized data, use a colorized empirically-normalized point
                 outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
                 outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
                 outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue , 0., 1.));
             }
             else if(samp < 0)
             {
+                // No empirically-normalized data, use the Hapke-normalized color
                 outData[pixelPosInOutData + 0] = refRsRGB;
                 outData[pixelPosInOutData + 1] = refGsRGB;
                 outData[pixelPosInOutData + 2] = refBsRGB;
             }
             else
             {
+                // Normal case: both empirically-normalized and Hapke-normalized data exist,
+                // use intensity from the former and chromaticity from the latter.
                 const auto R = red, G = green, B = blue;
                 const auto refI = refR+refG+refB;
                 const auto smallI = smallR+smallG+smallB;

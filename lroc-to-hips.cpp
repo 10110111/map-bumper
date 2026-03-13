@@ -711,6 +711,11 @@ try
     }
 
     generateLowerOrderTiles(orderMax, outDir);
+
+    std::cerr << "Generating Allsky previews...\n";
+    for(int order = 0; order <= 3; ++order)
+        generateAllsky(order, outDir, 128);
+
     convertTiles(finalExt, imgFormat, orderMax, outDir);
 }
 catch(std::exception const& ex)

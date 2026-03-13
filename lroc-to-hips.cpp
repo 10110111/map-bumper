@@ -371,6 +371,9 @@ Options:
  --my-copyright COPYRIGHT   Set hips_copyright to COPYRIGHT
  --orig-copyright COPYRIGHT Set obs_copyright to COPYRIGHT
  -s, --status STATUS        Set hips_status to STATUS
+ --equirect {N|auto}        Output an equirectangular map instead of a HiPS, with horizontal resolution of:
+                              * N pixels if a number is given, or
+                              * equal to that of the source data if 'auto' is specified
 )";
     return ret;
 }
@@ -393,6 +396,8 @@ try
     QString hipsStatus = "public mirror clonable";
     ColorChannel colorChannel = ColorChannel::Green;
     QString lrocSRGBFileName;
+    bool equirectOutput = false;
+    int equirectWidth = 0;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -490,6 +495,15 @@ try
         else if(arg == "--blue")
         {
             colorChannel = ColorChannel::Blue;
+        }
+        else if(arg == "--equirect")
+        {
+            GO_TO_PARAM();
+            equirectOutput = true;
+            if(std::string_view(argv[n]) == "auto")
+                equirectWidth = 0;
+            else
+                equirectWidth = std::stoul(argv[n]);
         }
         else
         {
@@ -592,6 +606,45 @@ try
 
     if(!QDir().mkpath(outDir))
         throw std::runtime_error("Failed to create directory \""+outDir.toStdString()+'"');
+
+    const size_t refYmin = (lrocImg.height()*90/70 - lrocImg.height()) / 2;
+    const size_t refYmax = lrocImg.height()*90/70 - refYmin;
+
+    if(equirectOutput)
+    {
+        std::cerr << "Creating the output equirectangular map...\n";
+        if(!equirectWidth)
+            equirectWidth = bigImgWidth;
+        const size_t W = equirectWidth, H = W / 2;
+        QImage img(W, H, QImage::Format_RGB888);
+        const size_t stride = img.bytesPerLine();
+        uchar*const data = img.bits();
+        for(size_t j = 0; j < H; ++j)
+        {
+            if(j > 0 && j % 100 == 0)
+                std::cerr << j << " scanlines done out of " << H << "\n";
+            const double latitude = M_PI * ((j + 0.5) / H - 0.5);
+            const size_t linePos = j * stride;
+            for(size_t i = 0; i < W; ++i)
+            {
+                const double longitude = 2 * M_PI * ((i + 0.5) / W - 0.5);
+                double pixel[3];
+                fillPoint(longitude, latitude, 0, bigData.get(), bigImgWidth, bigImgHeight, bigImgWidth, lrocImg, refYmin, refYmax, smallData.get(), pixel);
+                for(int k = 0; k < 3; ++k)
+                    data[linePos + 3 * i + k] = std::clamp(pixel[k],0.,1.)*255;
+            }
+        }
+        const auto fileName = outDir + "/equirect." + finalExt;
+        std::cerr << "Equirectangular map created, saving to " << fileName.toStdString() << "... ";
+        if(!img.save(fileName))
+        {
+            std::cerr << "FAILED\n";
+            return 1;
+        }
+        std::cerr << "done\n";
+        return 0;
+    }
+
     hipsSaveProperties(outDir, orderMax, imgFormat, surveyTitle, surveyType, description,
                        frame, obs_copyright, hips_copyright, creator, hipsStatus);
 
@@ -603,13 +656,11 @@ try
         std::atomic<unsigned> itemsDone{0};
         const auto startTime = std::chrono::steady_clock::now();
         auto work = [absolutePixMax,orderMax,outDir,startTime,lrocImg,&smallData = std::as_const(smallData),
-                     &bigData = std::as_const(bigData),colorChannel,
+                     &bigData = std::as_const(bigData),colorChannel,refYmin,refYmax,
                      &numThreadsReportedFirstProgress,&itemsDone](const int pixMin, const int pixMax)
         {
             constexpr int channelsPerPixel = 3;
             std::vector<double> data(HIPS_TILE_SIZE * HIPS_TILE_SIZE * channelsPerPixel);
-            const size_t refYmin = (lrocImg.height()*90/70 - lrocImg.height()) / 2;
-            const size_t refYmax = lrocImg.height()*90/70 - refYmin;
 
             auto time0 = std::chrono::steady_clock::now();
             size_t itemsDoneInThisThreadAfterLastUpdate = 0;

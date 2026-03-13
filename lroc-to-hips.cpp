@@ -255,6 +255,70 @@ double empToBlue(const double x, const double lon, const double lat)
 
 constexpr int DOWNSAMP_FACTOR = 4;
 
+void fillPoint(const double longitude, const double latitude, const int pixelPosInOutData,
+               const uint8_t*const data, const ssize_t width, const ssize_t height, const ssize_t rowStride,
+               const QImage& lrocColorRef, const size_t refYMin, const size_t refYMax,
+               const uint8_t*const smallData, double* outData)
+{
+    const auto& ref = lrocColorRef;
+
+    const auto samp = sRGBInverseTransferFunction(sample(data, width, height, rowStride, 1, 0, longitude, latitude));
+    const auto sampSm = sRGBInverseTransferFunction(sample(smallData, width/DOWNSAMP_FACTOR, height/DOWNSAMP_FACTOR, rowStride/DOWNSAMP_FACTOR,
+                                                           1, 0, longitude, latitude));
+    const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
+    const auto refGsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 1, longitude, latitude);
+    const auto refBsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 2, longitude, latitude);
+    const auto refR = sRGBInverseTransferFunction(refRsRGB);
+    const auto refG = sRGBInverseTransferFunction(refGsRGB);
+    const auto refB = sRGBInverseTransferFunction(refBsRGB);
+    const double smallR = empToRed(std::abs(sampSm), longitude, latitude);
+    const double smallG = empToGreen(std::abs(sampSm), longitude, latitude);
+    const double smallB = empToBlue(std::abs(sampSm), longitude, latitude);
+    const double red   = empToRed(std::abs(samp), longitude, latitude);
+    const double green = empToGreen(std::abs(samp), longitude, latitude);
+    const double blue  = empToBlue(std::abs(samp), longitude, latitude);
+    const double fallbackRed = 0.702, fallbackGreen = 0.616, fallbackBlue = 0.541;
+    if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
+    {
+        // No Hapke-normalized data, use a colorized empirically-normalized point
+        if(samp > 0)
+        {
+            outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
+            outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
+            outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue , 0., 1.));
+        }
+        else
+        {
+            // No empirically-normalized data either (happens in many craters near the poles)
+            outData[pixelPosInOutData + 0] = fallbackRed;
+            outData[pixelPosInOutData + 1] = fallbackGreen;
+            outData[pixelPosInOutData + 2] = fallbackBlue;
+        }
+    }
+    else if(samp < 0)
+    {
+        // No empirically-normalized data, use the Hapke-normalized color
+        outData[pixelPosInOutData + 0] = refRsRGB;
+        outData[pixelPosInOutData + 1] = refGsRGB;
+        outData[pixelPosInOutData + 2] = refBsRGB;
+    }
+    else
+    {
+        // Normal case: both empirically-normalized and Hapke-normalized data exist,
+        // use intensity from the former and chromaticity from the latter.
+        const auto R = red, G = green, B = blue;
+        const auto refI = refR+refG+refB;
+        const auto smallI = smallR+smallG+smallB;
+        const auto I = (R+G+B) * refI / smallI;
+        const auto rRef = refR/refI, gRef = refG/refI, bRef = refB/refI;
+        // TODO: adjust I so that the average of the current 4×4 cell is the
+        // same as that of the corresponding pixel of the reference image.
+        outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(rRef * I, 0., 1.));
+        outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(gRef * I, 0., 1.));
+        outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(bRef * I, 0., 1.));
+    }
+}
+
 void fillFace(const int order, const int pix, const uint8_t*const data,
               const ssize_t width, const ssize_t height, const ssize_t rowStride,
               const ssize_t channelsPerPixel, const QImage& lrocColorRef,
@@ -264,8 +328,6 @@ void fillFace(const int order, const int pix, const uint8_t*const data,
     const unsigned nside = 1u << order;
     int ix, iy, face;
     healpix_nest2xyf(nside, pix, &ix, &iy, &face);
-
-    const auto& ref = lrocColorRef;
 
     for(int y = 0; y < HIPS_TILE_SIZE; ++y)
     {
@@ -285,61 +347,8 @@ void fillFace(const int order, const int pix, const uint8_t*const data,
             const int i = y, j = x;
 
             const int pixelPosInOutData = (i + j*HIPS_TILE_SIZE)*channelsPerPixel;
-            const auto samp = sRGBInverseTransferFunction(sample(data, width, height, rowStride, 1, 0, longitude, latitude));
-            const auto sampSm = sRGBInverseTransferFunction(sample(smallData, width/DOWNSAMP_FACTOR, height/DOWNSAMP_FACTOR, rowStride/DOWNSAMP_FACTOR,
-                                                                   1, 0, longitude, latitude));
-            const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
-            const auto refGsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 1, longitude, latitude);
-            const auto refBsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 2, longitude, latitude);
-            const auto refR = sRGBInverseTransferFunction(refRsRGB);
-            const auto refG = sRGBInverseTransferFunction(refGsRGB);
-            const auto refB = sRGBInverseTransferFunction(refBsRGB);
-            const double smallR = empToRed(std::abs(sampSm), longitude, latitude);
-            const double smallG = empToGreen(std::abs(sampSm), longitude, latitude);
-            const double smallB = empToBlue(std::abs(sampSm), longitude, latitude);
-            const double red   = empToRed(std::abs(samp), longitude, latitude);
-            const double green = empToGreen(std::abs(samp), longitude, latitude);
-            const double blue  = empToBlue(std::abs(samp), longitude, latitude);
-            const double fallbackRed = 0.702, fallbackGreen = 0.616, fallbackBlue = 0.541;
-            if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
-            {
-                // No Hapke-normalized data, use a colorized empirically-normalized point
-                if(samp > 0)
-                {
-                    outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
-                    outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
-                    outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue , 0., 1.));
-                }
-                else
-                {
-                    // No empirically-normalized data either (happens in many craters near the poles)
-                    outData[pixelPosInOutData + 0] = fallbackRed;
-                    outData[pixelPosInOutData + 1] = fallbackGreen;
-                    outData[pixelPosInOutData + 2] = fallbackBlue;
-                }
-            }
-            else if(samp < 0)
-            {
-                // No empirically-normalized data, use the Hapke-normalized color
-                outData[pixelPosInOutData + 0] = refRsRGB;
-                outData[pixelPosInOutData + 1] = refGsRGB;
-                outData[pixelPosInOutData + 2] = refBsRGB;
-            }
-            else
-            {
-                // Normal case: both empirically-normalized and Hapke-normalized data exist,
-                // use intensity from the former and chromaticity from the latter.
-                const auto R = red, G = green, B = blue;
-                const auto refI = refR+refG+refB;
-                const auto smallI = smallR+smallG+smallB;
-                const auto I = (R+G+B) * refI / smallI;
-                const auto rRef = refR/refI, gRef = refG/refI, bRef = refB/refI;
-                // TODO: adjust I so that the average of the current 4×4 cell is the
-                // same as that of the corresponding pixel of the reference image.
-                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(rRef * I, 0., 1.));
-                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(gRef * I, 0., 1.));
-                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(bRef * I, 0., 1.));
-            }
+            fillPoint(longitude, latitude, pixelPosInOutData, data, width, height,
+                      rowStride, lrocColorRef, refYMin, refYMax, smallData, outData);
         }
     }
 }

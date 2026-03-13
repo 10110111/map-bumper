@@ -296,7 +296,7 @@ void fillPoint(const double longitude, const double latitude, const int pixelPos
             outData[pixelPosInOutData + 2] = fallbackBlue;
         }
     }
-    else if(sampSRGB < 0)
+    else if(sampSRGB <= 0)
     {
         // No empirically-normalized data, use the Hapke-normalized color
         outData[pixelPosInOutData + 0] = refRsRGB;

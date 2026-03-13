@@ -272,9 +272,17 @@ try
     Float scaleX = NAN, scaleY = NAN;
 
     if(std::isnan(carrLon))
-        fits_read_key(fits, TDOUBLE, "CRLN_OBS", &carrLon, nullptr, &status); if(status) carrLon = NAN; status = 0;
+    {
+        fits_read_key(fits, TDOUBLE, "CRLN_OBS", &carrLon, nullptr, &status);
+        if(status) carrLon = NAN;
+        status = 0;
+    }
     if(std::isnan(carrLat))
-    fits_read_key(fits, TDOUBLE, "CRLT_OBS", &carrLat, nullptr, &status); if(status) carrLat = NAN; status = 0;
+    {
+        fits_read_key(fits, TDOUBLE, "CRLT_OBS", &carrLat, nullptr, &status);
+        if(status) carrLat = NAN;
+        status = 0;
+    }
     fits_read_key(fits, TDOUBLE, "DSUN_OBS", &sunObsDist, nullptr, &status); if(status) sunObsDist = NAN; status = 0;
     fits_read_key(fits, TDOUBLE, "CRPIX1", &centerX, nullptr, &status); if(status) centerX = NAN; status = 0;
     fits_read_key(fits, TDOUBLE, "CRPIX2", &centerY, nullptr, &status); if(status) centerY = NAN; status = 0;

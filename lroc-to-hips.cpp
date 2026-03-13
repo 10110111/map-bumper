@@ -624,7 +624,7 @@ try
         {
             if(j > 0 && j % 100 == 0)
                 std::cerr << j << " scanlines done out of " << H << "\n";
-            const double latitude = M_PI * ((j + 0.5) / H - 0.5);
+            const double latitude = M_PI * (0.5 - (j + 0.5) / H);
             const size_t linePos = j * stride;
             for(size_t i = 0; i < W; ++i)
             {

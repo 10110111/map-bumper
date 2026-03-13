@@ -714,7 +714,7 @@ try
 
     std::cerr << "Generating Allsky previews...\n";
     for(int order = 0; order <= 3; ++order)
-        generateAllsky(order, outDir, 128);
+        generateAllsky(order, outDir, 128, finalExt);
 
     convertTiles(finalExt, imgFormat, orderMax, outDir);
 }

@@ -116,7 +116,7 @@ void generateLowerOrderTiles(const int orderMax, const QString& outDir, const bo
 
 }
 
-void generateAllsky(const int order, QString const& hipsDir, const int tileSize)
+void generateAllsky(const int order, QString const& hipsDir, const int tileSize, const QString& finalExt)
 {
     const int pixMax = 12 * (1 << (2 * order));
     const int numTilesInRow = int(std::sqrt(pixMax));
@@ -136,7 +136,7 @@ void generateAllsky(const int order, QString const& hipsDir, const int tileSize)
             p.drawImage(QPoint(tileSize * (pix % numTilesInRow), tileSize * (pix / numTilesInRow)), tile);
         }
     }
-    const auto outFileName = QString("%1/Norder%2/Allsky.%3").arg(hipsDir).arg(order).arg(hipsInitialExt);
+    const auto outFileName = QString("%1/Norder%2/Allsky.%3").arg(hipsDir).arg(order).arg(finalExt);
     outImg.save(outFileName, nullptr, 100);
 }
 

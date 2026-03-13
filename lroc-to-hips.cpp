@@ -262,7 +262,8 @@ void fillPoint(const double longitude, const double latitude, const int pixelPos
 {
     const auto& ref = lrocColorRef;
 
-    const auto samp = sRGBInverseTransferFunction(sample(data, width, height, rowStride, 1, 0, longitude, latitude));
+    const auto sampSRGB = sample(data, width, height, rowStride, 1, 0, longitude, latitude);
+    const auto samp = sRGBInverseTransferFunction(sampSRGB);
     const auto sampSm = sRGBInverseTransferFunction(sample(smallData, width/DOWNSAMP_FACTOR, height/DOWNSAMP_FACTOR, rowStride/DOWNSAMP_FACTOR,
                                                            1, 0, longitude, latitude));
     const auto refRsRGB = sampleLROC(ref.bits(), ref.width(), ref.height(), ref.bytesPerLine(), refYMin, refYMax, 3, 0, longitude, latitude);
@@ -281,7 +282,7 @@ void fillPoint(const double longitude, const double latitude, const int pixelPos
     if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
     {
         // No Hapke-normalized data, use a colorized empirically-normalized point
-        if(samp > 0)
+        if(sampSRGB > 0)
         {
             outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
             outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
@@ -295,7 +296,7 @@ void fillPoint(const double longitude, const double latitude, const int pixelPos
             outData[pixelPosInOutData + 2] = fallbackBlue;
         }
     }
-    else if(samp < 0)
+    else if(sampSRGB < 0)
     {
         // No empirically-normalized data, use the Hapke-normalized color
         outData[pixelPosInOutData + 0] = refRsRGB;

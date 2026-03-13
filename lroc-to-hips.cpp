@@ -300,12 +300,23 @@ void fillFace(const int order, const int pix, const uint8_t*const data,
             const double red   = empToRed(std::abs(samp), longitude, latitude);
             const double green = empToGreen(std::abs(samp), longitude, latitude);
             const double blue  = empToBlue(std::abs(samp), longitude, latitude);
+            const double fallbackRed = 0.702, fallbackGreen = 0.616, fallbackBlue = 0.541;
             if(refRsRGB < 0 || refGsRGB < 0 || refBsRGB < 0)
             {
                 // No Hapke-normalized data, use a colorized empirically-normalized point
-                outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
-                outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
-                outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue , 0., 1.));
+                if(samp > 0)
+                {
+                    outData[pixelPosInOutData + 0] = sRGBTransferFunction(std::clamp(red  , 0., 1.));
+                    outData[pixelPosInOutData + 1] = sRGBTransferFunction(std::clamp(green, 0., 1.));
+                    outData[pixelPosInOutData + 2] = sRGBTransferFunction(std::clamp(blue , 0., 1.));
+                }
+                else
+                {
+                    // No empirically-normalized data either (happens in many craters near the poles)
+                    outData[pixelPosInOutData + 0] = fallbackRed;
+                    outData[pixelPosInOutData + 1] = fallbackGreen;
+                    outData[pixelPosInOutData + 2] = fallbackBlue;
+                }
             }
             else if(samp < 0)
             {

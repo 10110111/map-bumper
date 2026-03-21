@@ -289,6 +289,9 @@ try
         return 1;
     }
 
+    if(outBinFileName.empty() && outObjFileName.empty())
+        std::cerr << "Warning: output files not specified. Will do a dry run.\n";
+
     const bool coarseMeshPresent = !inFileNameCoarseVertices.empty();
 
     loadHeightMap(heightMapImagePath);

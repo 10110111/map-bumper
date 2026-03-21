@@ -271,6 +271,12 @@ try
         }
     }
 
+    if(inFileNameFineVertices.empty())
+    {
+        std::cerr << "Fine vertices file not specified\n";
+        return 1;
+    }
+
     if(inFileNameCoarseVertices.empty() == inFileNameFineIndices.empty())
     {
         std::cerr << "Either coarse vertices must be present, or fine indices\n";

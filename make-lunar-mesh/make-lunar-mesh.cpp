@@ -13,9 +13,9 @@ const double moonHeightMapBaseRadiusKm = 1727.4;
 const uint16_t* moonHeightMapBits;
 int moonHeightMapWidth, moonHeightMapHeight, moonHeightMapRowStride;
 
-void loadHeightMap()
+void loadHeightMap(const QString& path)
 {
-    static QImage in("/home/ruslan/Downloads/Celestial bodies and space/Moon/generated-for-stellarium/23k/mixed-height-map.png");
+    static QImage in(path);
     if(in.isNull())
         throw std::runtime_error("Failed to open input file");
     if(!in.isGrayscale())
@@ -203,6 +203,7 @@ int usage(const char*const argv0, const int ret)
     (ret ? std::cerr : std::cout) << argv0
         << " {--fine-vertices|-f} input-file-fine-vertices.bin"
            " {{--coarse-vertices|-c} input-file-coarse-vertices.bin | {--fine-indices|-i} input-file-fine-indices.bin}"
+           " {--height-map|-m} height-map.png"
            " [-o output-file.obj] [-b output-file.bin]\n";
     return ret;
 }
@@ -216,6 +217,7 @@ try
     std::string inFileNameFineVertices;
     std::string inFileNameFineIndices;
     std::string inFileNameCoarseVertices;
+    QString heightMapImagePath;
     std::string outObjFileName;
     std::string outBinFileName;
     for(int n = 1; n < argc; ++n)
@@ -248,6 +250,11 @@ try
             GO_TO_PARAM();
             inFileNameFineIndices = argv[n];
         }
+        else if(arg == "--height-map" || arg == "-m")
+        {
+            GO_TO_PARAM();
+            heightMapImagePath = argv[n];
+        }
         else if(arg == "-o")
         {
             GO_TO_PARAM();
@@ -270,9 +277,15 @@ try
         return 1;
     }
 
+    if(heightMapImagePath.isEmpty())
+    {
+        std::cerr << "Height map file not specified\n";
+        return 1;
+    }
+
     const bool coarseMeshPresent = !inFileNameCoarseVertices.empty();
 
-    loadHeightMap();
+    loadHeightMap(heightMapImagePath);
 
     using namespace std::chrono;
 

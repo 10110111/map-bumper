@@ -1,6 +1,7 @@
 #include <cmath>
 #include <chrono>
 #include <vector>
+#include <sstream>
 #include <fstream>
 #include <iostream>
 #include <QImage>
@@ -12,6 +13,15 @@ const double moonHeightMapKmPerUnit = 0.5e-3;
 const double moonHeightMapBaseRadiusKm = 1727.4;
 const uint16_t* moonHeightMapBits;
 int moonHeightMapWidth, moonHeightMapHeight, moonHeightMapRowStride;
+
+template<typename F>
+std::string formatFloat(const F x)
+{
+    std::ostringstream ss;
+    ss.precision(std::numeric_limits<F>::max_digits10);
+    ss << x;
+    return ss.str();
+}
 
 void loadHeightMap(const QString& path)
 {
@@ -198,13 +208,73 @@ bool saveToBin(std::string const& path, std::vector<ch_vertex> const& vertices,
     return !!out;
 }
 
+bool saveToEconomyBin(std::string const& path, std::vector<ch_vertex> const& vertices,
+                      int const*const indices, const uint32_t indexCount)
+{
+    std::ofstream out(path, std::ios_base::binary);
+
+    const uint32_t vertexCount = vertices.size();
+    out.write(reinterpret_cast<const char*>(&vertexCount), sizeof vertexCount);
+    out.write(reinterpret_cast<const char*>(&indexCount), sizeof indexCount);
+
+    double rMin = INFINITY, rMax = -INFINITY;
+    for(size_t n = 0; n < vertices.size(); ++n)
+    {
+        const auto r = std::hypot(vertices[n].x,
+                                  vertices[n].y,
+                                  vertices[n].z);
+        if(r < rMin) rMin = r;
+        if(r > rMax) rMax = r;
+    }
+    {
+        const float minmax[2] = {float(rMin), float(rMax)};
+        out.write(reinterpret_cast<const char*>(&minmax), sizeof minmax);
+    }
+
+    using VType = uint16_t;
+    constexpr auto vTypeMax = std::numeric_limits<VType>::max();
+    for(size_t n = 0; n < vertices.size(); ++n)
+    {
+        const double x = vertices[n].x;
+        const double y = vertices[n].y;
+        const double z = vertices[n].z;
+        using namespace std;
+        const auto r = hypot(x,y,z);
+        const auto theta = asin(z / r);
+        const auto phi = atan2(y,x);
+        if(isnan(theta) || isnan(phi))
+        {
+            throw std::runtime_error("Got NaN for theta or phi for xyz="+
+                                     formatFloat(x)+", "+formatFloat(y)+", "+
+                                     formatFloat(z));
+        }
+        const auto unitRangeR = (std::clamp(r, rMin, rMax) - rMin) / (rMax - rMin);
+        const auto unitRangeTheta = std::clamp(theta + M_PI/2, 0., M_PI) / M_PI;
+        const auto unitRangePhi = std::clamp(phi + M_PI, 0., 2*M_PI) / (2*M_PI);
+        const VType point[3] = {static_cast<VType>(unitRangeR     * vTypeMax),
+                                static_cast<VType>(unitRangeTheta * vTypeMax),
+                                static_cast<VType>(unitRangePhi   * vTypeMax)};
+        out.write(reinterpret_cast<const char*>(&point), sizeof point);
+    }
+
+    {
+        std::vector<uint32_t> indicesToWrite(indexCount);
+        std::transform(indices, indices+indexCount, indicesToWrite.begin(),
+                       [](const int x){ return uint32_t(x); });
+        out.write(reinterpret_cast<const char*>(indicesToWrite.data()),
+                  indicesToWrite.size()*sizeof indicesToWrite[0]);
+    }
+    out.close();
+    return !!out;
+}
+
 int usage(const char*const argv0, const int ret)
 {
     (ret ? std::cerr : std::cout) << argv0
         << " {--fine-vertices|-f} input-file-fine-vertices.bin"
            " {{--coarse-vertices|-c} input-file-coarse-vertices.bin | {--fine-indices|-i} input-file-fine-indices.bin}"
            " {--height-map|-m} height-map.png"
-           " [-o output-file.obj] [-b output-file.bin]\n";
+           " [-o output-file.obj] [-b output-file.bin] [-be output-file-with-space-economy.bin]\n";
     return ret;
 }
 
@@ -220,6 +290,7 @@ try
     QString heightMapImagePath;
     std::string outObjFileName;
     std::string outBinFileName;
+    std::string outEconomicBinFileName;
     for(int n = 1; n < argc; ++n)
     {
         const std::string arg(argv[n]);
@@ -265,6 +336,11 @@ try
             GO_TO_PARAM();
             outBinFileName = argv[n];
         }
+        else if(arg == "-be")
+        {
+            GO_TO_PARAM();
+            outEconomicBinFileName = argv[n];
+        }
         else
         {
             return usage(argv[0], 1);
@@ -289,7 +365,7 @@ try
         return 1;
     }
 
-    if(outBinFileName.empty() && outObjFileName.empty())
+    if(outBinFileName.empty() && outObjFileName.empty() && outEconomicBinFileName.empty())
         std::cerr << "Warning: output files not specified. Will do a dry run.\n";
 
     const bool coarseMeshPresent = !inFileNameCoarseVertices.empty();
@@ -353,6 +429,18 @@ try
             std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
         else
             std::cerr << "Failed to save to \"" << outBinFileName << "\"\n";
+    }
+
+    if(!outEconomicBinFileName.empty())
+    {
+        std::cerr << "Saving results to \"" << outEconomicBinFileName << "\"...\n";
+        const auto t10 = steady_clock::now();
+        const bool ok = saveToEconomyBin(outEconomicBinFileName, combined, indices, 3*numFaces);
+        const auto t11 = steady_clock::now();
+        if(ok)
+            std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
+        else
+            std::cerr << "Failed to save to \"" << outEconomicBinFileName << "\"\n";
     }
 
     if(!outObjFileName.empty())

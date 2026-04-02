@@ -268,13 +268,50 @@ bool saveToEconomyBin(std::string const& path, std::vector<ch_vertex> const& ver
     return !!out;
 }
 
+void reshapeIndices(std::vector<int>& indices)
+{
+    const int icosaFaceSize = indices.size() / 20;
+    // Number of points per icosahedron's face side
+    const int pointsPerSide = std::lround(std::sqrt(icosaFaceSize / 3));
+    if(pointsPerSide * pointsPerSide * 3 != icosaFaceSize)
+        throw std::runtime_error("Unexpected face size: "+std::to_string(icosaFaceSize));
+
+    std::vector<int> newIndices;
+    int inPos = 0;
+    for(int icosaFace = 0; icosaFace < 20; ++icosaFace)
+    {
+        for(int posInSide = 0; posInSide < pointsPerSide; ++posInSide)
+        {
+            const int numHorizTriangles = pointsPerSide - posInSide;
+            for(int horizPos = 0; horizPos < numHorizTriangles; ++horizPos)
+            {
+                newIndices.push_back(indices[inPos]);
+                newIndices.push_back(indices[inPos + 2]);
+                inPos += 3;
+            }
+            newIndices.push_back(indices[inPos - 2]);
+
+            // The triangle strip we've just generated has an opposite orientation to
+            // the original triangles, so reverse it to fix this up.
+            std::reverse(newIndices.end() - (numHorizTriangles * 2 + 1), newIndices.end());
+
+            inPos += (numHorizTriangles - 1) * 3; // skip the filler triangles in the row
+            newIndices.push_back(UINT_MAX);
+        }
+    }
+
+    indices = newIndices;
+}
+
 int usage(const char*const argv0, const int ret)
 {
     (ret ? std::cerr : std::cout) << argv0
         << " {--fine-vertices|-f} input-file-fine-vertices.bin"
            " {{--coarse-vertices|-c} input-file-coarse-vertices.bin | {--fine-indices|-i} input-file-fine-indices.bin}"
            " {--height-map|-m} height-map.png"
-           " [-o output-file.obj] [-b output-file.bin] [-be output-file-with-space-economy.bin]\n";
+           " [--reshape]"
+           " [-o output-file.obj] [-b output-file.bin] [-be output-file-with-space-economy.bin]\n"
+           "The --reshape option will transform the triangles into triangle strips with UINT_MAX being the primitive restart index\n";
     return ret;
 }
 
@@ -291,6 +328,7 @@ try
     std::string outObjFileName;
     std::string outBinFileName;
     std::string outEconomicBinFileName;
+    bool mustReshapeIndices = false;
     for(int n = 1; n < argc; ++n)
     {
         const std::string arg(argv[n]);
@@ -325,6 +363,10 @@ try
         {
             GO_TO_PARAM();
             heightMapImagePath = argv[n];
+        }
+        else if(arg == "--reshape")
+        {
+            mustReshapeIndices = true;
         }
         else if(arg == "-o")
         {
@@ -370,6 +412,15 @@ try
 
     const bool coarseMeshPresent = !inFileNameCoarseVertices.empty();
 
+    if(!outObjFileName.empty())
+    {
+        if(mustReshapeIndices)
+            throw std::runtime_error("The --reshape option is incompatible with saving to OBJ file.");
+
+        if(coarseMeshPresent)
+            throw std::runtime_error("The --reshape option is incompatible with coarse mesh processing.");
+    }
+
     loadHeightMap(heightMapImagePath);
 
     using namespace std::chrono;
@@ -387,6 +438,7 @@ try
     std::vector<int> indicesLoaded;
     int* indices = nullptr;
     int numFaces = 0;
+    int numIndices = 0;
     std::vector<ch_vertex> combined;
     if(coarseMeshPresent)
     {
@@ -407,10 +459,17 @@ try
 
         const auto t0 = steady_clock::now();
         indicesLoaded = loadIndices(inFileNameFineIndices);
-        numFaces = indicesLoaded.size() / 3;
+        numIndices = indicesLoaded.size();
+        numFaces = numIndices / 3;
         indices = indicesLoaded.data();
         const auto t1 = steady_clock::now();
         std::cerr << indicesLoaded.size() << " indices loaded in " << toSeconds(t1-t0) << " s\n";
+    }
+
+    if(mustReshapeIndices)
+    {
+        reshapeIndices(indicesLoaded);
+        numIndices = indicesLoaded.size();
     }
 
     std::cerr << "Applying heights...\n";
@@ -423,7 +482,7 @@ try
     {
         std::cerr << "Saving results to \"" << outBinFileName << "\"...\n";
         const auto t10 = steady_clock::now();
-        const bool ok = saveToBin(outBinFileName, combined, indices, 3*numFaces);
+        const bool ok = saveToBin(outBinFileName, combined, indices, numIndices);
         const auto t11 = steady_clock::now();
         if(ok)
             std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";
@@ -435,7 +494,7 @@ try
     {
         std::cerr << "Saving results to \"" << outEconomicBinFileName << "\"...\n";
         const auto t10 = steady_clock::now();
-        const bool ok = saveToEconomyBin(outEconomicBinFileName, combined, indices, 3*numFaces);
+        const bool ok = saveToEconomyBin(outEconomicBinFileName, combined, indices, numIndices);
         const auto t11 = steady_clock::now();
         if(ok)
             std::cerr << "Saved in " << toSeconds(t11-t10) << " s\n";

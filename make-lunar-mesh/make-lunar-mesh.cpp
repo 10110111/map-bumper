@@ -27,7 +27,7 @@ void loadHeightMap(const QString& path)
 {
     static QImage in(path);
     if(in.isNull())
-        throw std::runtime_error("Failed to open input file");
+        throw std::runtime_error("Failed to open input file "+path.toStdString());
     if(!in.isGrayscale())
         throw std::runtime_error("Input image is not grayscale. Can't interpret it as a height map.");
 

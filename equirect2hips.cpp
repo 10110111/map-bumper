@@ -78,7 +78,6 @@ double normalizeLongitude(double x)
 }
 
 constexpr int TILE_SIZE = 512;
-const QString initialExt = "bmp"; // Should be uncompressed for saving and reloading speed
 
 void fillFace(const int order, const int pix, const QImage& in, double* outData)
 {
@@ -328,7 +327,7 @@ try
                 const auto outPath = QString("%1/Norder%2/Dir%3").arg(outDir).arg(orderMax).arg((pix / 10000) * 10000);
                 if(!QDir().mkpath(outPath))
                     throw std::runtime_error("Failed to create directory \""+outPath.toStdString()+'"');
-                const auto fileName = QString("%1/Npix%4.%5").arg(outPath).arg(pix).arg(initialExt);
+                const auto fileName = QString("%1/Npix%4.%5").arg(outPath).arg(pix).arg(hipsInitialExt);
                 if(!out.save(fileName))
                     throw std::runtime_error("Failed to save output file " + fileName.toStdString());
 

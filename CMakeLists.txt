@@ -50,6 +50,9 @@ endif()
 add_executable(equirect2cubemap equirect2cubemap.cpp)
 target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 
+add_executable(equirect2stellandscape equirect2stellandscape.cpp)
+target_link_libraries(equirect2stellandscape Qt6::Core Qt6::Gui)
+
 add_executable(equirect2hips equirect2hips.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(equirect2hips Qt6::Core Qt6::Gui)
 

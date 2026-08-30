@@ -241,7 +241,7 @@ try
     if(channelsPerPixel == 4 && fillTransparentTop)
     {
         // Fill the transparent range above the highest visible pixel with a repetition of this pixel
-        const int smallAlphaThreshold = 64 / 255.;
+        const double smallAlphaThreshold = 64 / 255.;
         for(ssize_t i = 0; i < inputWidth; ++i)
         {
             double red = 0, green = 0, blue = 0;

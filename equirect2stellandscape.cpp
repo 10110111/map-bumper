@@ -293,6 +293,7 @@ try
         }
         if(!isGround && channelsPerPixel == 4)
         {
+            // Fade out the bottom into the ground to avoid seams due to resolution or grid orientation mismatch
             for(ssize_t j = currentSideHeight - 1 - overlapGradientHeight; j < currentSideHeight; ++j)
             {
                 const double alphaFactor = double(currentSideHeight - j) / (overlapGradientHeight + 1);

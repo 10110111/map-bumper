@@ -103,6 +103,9 @@ int usage(const char*const argv0, const int ret)
                  "   -s, --supersampling N              Number of supersampling samples (default: 1)\n"
                  "   -b, --side-bottom-angle-shift R    The value of decor_angle_shift (default: -30)\n"
                  "   --no-force-height-pot              Don't force side height to be a power-of-two\n"
+                 "   --fill-transparent-top             Fill transparent pixels at the top of each column\n"
+                 "                                       by the RGB values of their topmost visible pixels\n"
+                 "                                       (to avoid interpolation artifacts)\n"
                  ;
     return ret;
 }
@@ -121,6 +124,7 @@ try
     double sideBottomAngularShift = -30;
     double startingLongitude = M_PI;
     bool forceHeightPOT = true;
+    bool fillTransparentTop = false;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -180,6 +184,10 @@ try
         {
             forceHeightPOT = false;
         }
+        else if (arg == "--fill-transparent-top")
+        {
+            fillTransparentTop = true;
+        }
         else
         {
             std::cerr << "Unknown switch " << argv[n] << "\n";
@@ -228,6 +236,39 @@ try
     if(forceHeightPOT)
         sideHeight = roundToNextPowerOfTwo(sideHeight);
     sideAngularHeight = sideHeight / pixelsPerRadianAtHorizon; // update using the rounded value of sideHeight
+
+
+    if(channelsPerPixel == 4 && fillTransparentTop)
+    {
+        // Fill the transparent range above the highest visible pixel with a repetition of this pixel
+        const int smallAlphaThreshold = 64 / 255.;
+        for(ssize_t i = 0; i < inputWidth; ++i)
+        {
+            double red = 0, green = 0, blue = 0;
+            ssize_t jMax = -1;
+            for(ssize_t j = 0; j < inputHeight; ++j)
+            {
+                const auto pixelPosInData = j*inputRowStride + i*channelsPerPixel;
+                const auto alpha = inputData[pixelPosInData + 3];
+                if(alpha > smallAlphaThreshold)
+                {
+                    jMax = j;
+                    red   = inputData[pixelPosInData+0];
+                    green = inputData[pixelPosInData+1];
+                    blue  = inputData[pixelPosInData+2];
+                    break;
+                }
+            }
+            if(jMax == -1) continue; // No empty pixels at the top
+            for(ssize_t j = 0; j < jMax; ++j)
+            {
+                const auto pixelPosInData = j*inputRowStride + i*channelsPerPixel;
+                inputData[pixelPosInData+0] = red;
+                inputData[pixelPosInData+1] = green;
+                inputData[pixelPosInData+2] = blue;
+            }
+        }
+    }
 
     std::vector<QVector2D> samples(numSamples);
     if(numSamples<=1)

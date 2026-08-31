@@ -302,7 +302,7 @@ try
                 for(ssize_t j = 0; j < currentSideHeight; ++j)
                 {
                     const double J = j + samples[sampleN].y();
-                    const double y = 2 * ((J + 0.5) / sideWidth - 0.5); // range: (-1,1)
+                    const double y = 2 * ((J + 0.5) / currentSideHeight - 0.5); // range: (-1,1)
                     double latitude;
                     if(isGround)
                     {

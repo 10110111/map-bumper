@@ -9,13 +9,13 @@
 
 template<typename T>
 double fetch(T const* data, const ssize_t width, const ssize_t height,
-             const size_t rowStride, const size_t channelsPerPixel,
+             const size_t rowStride,
              const size_t subpixelIndex, const ssize_t requestedX, const ssize_t requestedY)
 {
     const auto x = (requestedX+width) % width;
     const auto y = std::clamp(requestedY, ssize_t(0), height-1);
 
-    const auto rawValue = data[x*channelsPerPixel + subpixelIndex + y*rowStride];
+    const auto rawValue = data[x*4 + subpixelIndex + y*rowStride];
 
     if(std::is_integral_v<T> && std::is_unsigned_v<T>)
         return static_cast<double>(rawValue) / std::numeric_limits<T>::max();
@@ -27,8 +27,8 @@ double fetch(T const* data, const ssize_t width, const ssize_t height,
 
 template<typename T>
 double sample(T const* data, const size_t width, const size_t height,
-              const size_t rowStride, const size_t channelsPerPixel,
-              const size_t subpixelIndex, const double longitude, const double latitude)
+              const size_t rowStride, const size_t subpixelIndex,
+              const double longitude, const double latitude)
 {
     assert(-M_PI <= longitude && longitude <= M_PI);
     assert(-M_PI/2 <= latitude && latitude <= M_PI);
@@ -37,41 +37,28 @@ double sample(T const* data, const size_t width, const size_t height,
     const auto firstLon = (1.-width)/2. * deltaLon;
 
     const auto x = (longitude - firstLon) / deltaLon;
-    const auto floorX = std::floor(x);
+    const auto roundedX = std::lround(x);
 
     const auto deltaLat = -M_PI/height;
     const auto firstLat = (1.-height)/2. * deltaLat;
 
     const auto y = (latitude - firstLat) / deltaLat;
-    const auto floorY = std::floor(y);
+    const auto roundedY = std::lround(y);
 
-    const auto pTopLeft     = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY);
-    const auto pTopRight    = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY);
-    const auto pBottomLeft  = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX  , floorY+1);
-    const auto pBottomRight = fetch(data, width, height, rowStride, channelsPerPixel, subpixelIndex, floorX+1, floorY+1);
-
-    const auto fracX = x - floorX;
-    const auto fracY = y - floorY;
-
-    const auto sampleLeft  = pTopLeft  + (pBottomLeft -pTopLeft) *fracY;
-    const auto sampleRight = pTopRight + (pBottomRight-pTopRight)*fracY;
-
-    return sampleLeft + (sampleRight-sampleLeft)*fracX;
+    return fetch(data, width, height, rowStride, subpixelIndex, roundedX, roundedY);
 }
 
 template<typename T>
 int findEmptyTopHeight(T const* data, const ssize_t width, const ssize_t height,
-                       const size_t rowStride, const size_t channelsPerPixel)
+                       const size_t rowStride)
 {
-    if(channelsPerPixel < 4) return 0; // no alpha, everything opaque
-
     ssize_t jMax = -1;
     for(ssize_t j = 0; j < height; ++j)
     {
         bool allEmpty = true;
         for(ssize_t i = 0; i < width; ++i)
         {
-            const auto alpha = fetch(data, width, height, rowStride, channelsPerPixel, 3, i, j);
+            const auto alpha = fetch(data, width, height, rowStride, 3, i, j);
             if(alpha != 0)
             {
                 allEmpty = false;
@@ -206,7 +193,7 @@ try
         std::cerr << "Failed to open input file\n";
         return 1;
     }
-    in = in.convertToFormat(in.isGrayscale() ? QImage::Format_Grayscale8 : in.hasAlphaChannel() ? QImage::Format_ARGB32 : QImage::Format_RGB32);
+    in = in.convertToFormat(QImage::Format_RGBA8888);
 
     const auto inputData = in.bits();
     const auto inputWidth  = in.width();
@@ -217,9 +204,6 @@ try
         std::cerr << "Row stride of " << inputStrideInBytes << " bytes is not a multiple of a pixel, this is not supported\n";
         return 1;
     }
-    const auto bitDepth = in.depth();
-    assert(bitDepth % (8 * sizeof inputData[0]) == 0);
-    const int channelsPerPixel = bitDepth / (8 * sizeof inputData[0]);
     const auto inputRowStride = inputStrideInBytes / sizeof inputData[0];
 
     const double pixelsPerRadianAtHorizon = sideWidth * numSides / (2*M_PI);
@@ -227,7 +211,7 @@ try
     constexpr int overlapGradientHeight = 10;
     const double groundAngleShift = sideBottomAngularShift + overlapGradientHeight / pixelsPerRadianAtHorizon;
 
-    const int emptyTopHeight = findEmptyTopHeight(inputData, inputWidth, inputHeight, inputRowStride, channelsPerPixel);
+    const int emptyTopHeight = findEmptyTopHeight(inputData, inputWidth, inputHeight, inputRowStride);
     std::cerr << "Input map has " << emptyTopHeight << "px out of " << inputHeight
               << " empty (" << 100.*emptyTopHeight/inputHeight << "%) at the top\n";
     const double emptyTopAngularExtent = M_PI * emptyTopHeight / inputHeight;
@@ -290,17 +274,19 @@ try
         const bool isGround = side == -1;
         std::cerr << "Processing " << (isGround ? "ground" : "side "+std::to_string(side)) << "...\n";
         const int currentSideHeight = isGround ? sideWidth : sideHeight;
-        const auto dataSize = sideWidth*currentSideHeight*channelsPerPixel;
+        const auto dataSize = sideWidth*currentSideHeight*4;
         std::vector<double> outData(dataSize);
-        for(int sampleN = 0; sampleN < numSamples; ++sampleN)
+        for(ssize_t i = 0; i < sideWidth; ++i)
         {
-            for(ssize_t i = 0; i < sideWidth; ++i)
+            for(ssize_t j = 0; j < currentSideHeight; ++j)
             {
-                const double I = i + samples[sampleN].x();
-                const double x = 2 * ((I + 0.5) / sideWidth - 0.5); // range: (-1,1)
-                double longitude = startingLongitude + (side + (I + 0.5) / sideWidth) * sideAngularWidth;
-                for(ssize_t j = 0; j < currentSideHeight; ++j)
+                const auto pixelPosInData = (i + j*sideWidth)*4;
+                double red = 0, green = 0, blue = 0, alpha = 0;
+                for(int sampleN = 0; sampleN < numSamples; ++sampleN)
                 {
+                    const double I = i + samples[sampleN].x();
+                    const double x = 2 * ((I + 0.5) / sideWidth - 0.5); // range: (-1,1)
+                    double longitude;
                     const double J = j + samples[sampleN].y();
                     const double y = 2 * ((J + 0.5) / currentSideHeight - 0.5); // range: (-1,1)
                     double latitude;
@@ -314,25 +300,32 @@ try
                     }
                     else
                     {
-                        latitude = sideBottomAngularShift + (currentSideHeight - 0.5 - J) / currentSideHeight * sideAngularHeight;
+                        latitude  = sideBottomAngularShift + (currentSideHeight - 0.5 - J) / currentSideHeight * sideAngularHeight;
+                        longitude = startingLongitude + (side + (I + 0.5) / sideWidth) * sideAngularWidth;
                     }
-                    const auto pixelPosInData = (i + j*sideWidth)*channelsPerPixel;
 
-                    for(int subpixelN = 0; subpixelN < channelsPerPixel; ++subpixelN)
-                    {
-                        outData[pixelPosInData + subpixelN] +=
-                            sample(inputData, inputWidth, inputHeight, inputRowStride, channelsPerPixel,
-                                   subpixelN, longitude, latitude);
-                    }
+                    red   += sample(inputData, inputWidth, inputHeight, inputRowStride, 0, longitude, latitude);
+                    green += sample(inputData, inputWidth, inputHeight, inputRowStride, 1, longitude, latitude);
+                    blue  += sample(inputData, inputWidth, inputHeight, inputRowStride, 2, longitude, latitude);
+                    alpha += sample(inputData, inputWidth, inputHeight, inputRowStride, 3, longitude, latitude);
+                }
+                if(alpha > 0)
+                {
+                    outData[pixelPosInData + 0] = red   / alpha;
+                    outData[pixelPosInData + 1] = green / alpha;
+                    outData[pixelPosInData + 2] = blue  / alpha;
+                    outData[pixelPosInData + 3] = alpha / numSamples;
+                }
+                else
+                {
+                    outData[pixelPosInData + 0] = red   / numSamples;
+                    outData[pixelPosInData + 1] = green / numSamples;
+                    outData[pixelPosInData + 2] = blue  / numSamples;
+                    outData[pixelPosInData + 3] = alpha / numSamples;
                 }
             }
         }
-        if(numSamples > 1)
-        {
-            for(auto& v : outData)
-                v *= 1./numSamples;
-        }
-        if(!isGround && channelsPerPixel == 4)
+        if(!isGround)
         {
             // Fade out the bottom into the ground to avoid seams due to resolution or grid orientation mismatch
             for(ssize_t j = currentSideHeight - 1 - overlapGradientHeight; j < currentSideHeight; ++j)
@@ -340,7 +333,7 @@ try
                 const double alphaFactor = double(currentSideHeight - j) / (overlapGradientHeight + 1);
                 for(ssize_t i = 0; i < sideWidth; ++i)
                 {
-                    const auto pixelPosInData = (i + j*sideWidth)*channelsPerPixel;
+                    const auto pixelPosInData = (i + j*sideWidth)*4;
                     outData[pixelPosInData + 3] *= alphaFactor;
                 }
             }
@@ -360,7 +353,7 @@ try
             for(auto v : outData)
                 outBits.push_back(v*std::numeric_limits<OutType>::max());
         }
-        const QImage out(outBits.data(), sideWidth, currentSideHeight, sideWidth*channelsPerPixel, in.format());
+        const QImage out(outBits.data(), sideWidth, currentSideHeight, sideWidth*4, in.format());
         const auto baseName = isGround ? "ground" : QString("/side%1").arg(side);
         const auto fileName = outDir + "/" + baseName + ".png";
         if(!out.save(fileName))

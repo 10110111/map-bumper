@@ -90,6 +90,8 @@ int usage(const char*const argv0, const int ret)
                  "   -s, --supersampling N              Number of supersampling samples (default: 1)\n"
                  "   -b, --side-bottom-angle-shift R    The value of decor_angle_shift (default: -30)\n"
                  "   --no-force-height-pot              Don't force side height to be a power-of-two\n"
+                 "   --align-horizon                    Align horizon to the pixel grid (adjusts the\n"
+                 "                                       value of -b)\n"
                  ;
     return ret;
 }
@@ -108,6 +110,7 @@ try
     double sideBottomAngularShift = -30;
     double startingLongitude = M_PI;
     bool forceHeightPOT = true;
+    bool alignHorizonToPixelGrid = false;
 
     int totalPositionalArgumentsFound = 0;
     for(int n = 1; n < argc; ++n)
@@ -167,6 +170,10 @@ try
         {
             forceHeightPOT = false;
         }
+        else if(arg == "--align-horizon")
+        {
+            alignHorizonToPixelGrid = true;
+        }
         else
         {
             std::cerr << "Unknown switch " << argv[n] << "\n";
@@ -212,6 +219,16 @@ try
     if(forceHeightPOT)
         sideHeight = roundToNextPowerOfTwo(sideHeight);
     sideAngularHeight = sideHeight / pixelsPerRadianAtHorizon; // update using the rounded value of sideHeight
+
+    if(alignHorizonToPixelGrid)
+    {
+        constexpr double maxSuperSampleShift = 0.5;
+        constexpr double latitudeToAlign = 0;
+        const double jMaxUnaligned = (sideBottomAngularShift - latitudeToAlign) / sideAngularHeight * sideHeight + sideHeight - 0.5 + maxSuperSampleShift;
+        // For alignment the maximum value of j corresponding to latitudeToAlign must be a half-integer, because it's right between two pixels
+        const double jMaxAligned = std::round(jMaxUnaligned + 0.5) - 0.5;
+        sideBottomAngularShift = latitudeToAlign - (sideHeight - 0.5 - jMaxAligned) / sideHeight * sideAngularHeight;
+    }
 
     std::vector<QVector2D> samples(numSamples);
     if(numSamples<=1)

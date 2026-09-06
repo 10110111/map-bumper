@@ -53,6 +53,9 @@ target_link_libraries(equirect2cubemap Qt6::Core Qt6::Gui)
 add_executable(equirect2stellandscape equirect2stellandscape.cpp)
 target_link_libraries(equirect2stellandscape Qt6::Core Qt6::Gui)
 
+add_executable(propagate-rgb-to-transparent-neighbors propagate-rgb-to-transparent-neighbors.cpp)
+target_link_libraries(propagate-rgb-to-transparent-neighbors Qt6::Core Qt6::Gui)
+
 add_executable(equirect2hips equirect2hips.cpp healpix.cpp hips.cpp timing.cpp)
 target_link_libraries(equirect2hips Qt6::Core Qt6::Gui)
 

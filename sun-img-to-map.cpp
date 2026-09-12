@@ -261,7 +261,8 @@ try
     for(int j = 0; j < height; ++j)
     {
         fpixel[1] = height - j;
-        fits_read_pix(fits, TDOUBLE, fpixel, width, &nullVal, data.get() + width * j, nullptr, &status);
+        int anynul;
+        fits_read_pix(fits, TDOUBLE, fpixel, width, &nullVal, data.get() + width * j, &anynul, &status);
         if(status) throw FITSError("Failed to read pixels from the FITS image", status);
     }
 

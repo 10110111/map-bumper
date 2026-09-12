@@ -252,6 +252,7 @@ try
         width  = naxes[0];
         height = naxes[1];
         data.reset(new double[width*height]);
+        break;
     }
     if(!data) throw std::runtime_error("Failed to find a usable image in the FITS file");
     const int stride = width;

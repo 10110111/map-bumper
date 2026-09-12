@@ -251,8 +251,6 @@ try
         if(naxis != 2) continue;
         width  = naxes[0];
         height = naxes[1];
-        if(bitpix != SHORT_IMG)
-            throw std::runtime_error("FITS image type isn't SHORT, instead bitpix="+std::to_string(bitpix)+", this is not supported");
         data.reset(new double[width*height]);
     }
     if(!data) throw std::runtime_error("Failed to find a usable image in the FITS file");
